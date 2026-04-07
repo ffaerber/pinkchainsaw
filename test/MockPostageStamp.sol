@@ -21,13 +21,8 @@ contract MockPostageStamp {
     }
 
     function createBatch(bytes32 _batchId, address _owner, uint8 _depth) external {
-        batches[_batchId] = Batch({
-            owner: _owner,
-            depth: _depth,
-            bucketDepth: 16,
-            immutableFlag: false,
-            remainingBalance: 1
-        });
+        batches[_batchId] =
+            Batch({owner: _owner, depth: _depth, bucketDepth: 16, immutableFlag: false, remainingBalance: 1});
     }
 
     function topUp(bytes32 _batchId, uint256 _topupAmountPerChunk) external {

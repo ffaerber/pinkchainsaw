@@ -22,7 +22,8 @@
       "Bash(python3 -c ':*)",
       "Bash(forge build:*)",
       "Bash(forge test:*)",
-      "Bash(cast call:*)"
+      "Bash(cast call:*)",
+      "Bash(forge fmt:*)"
     ]
   }
 }

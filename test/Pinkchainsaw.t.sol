@@ -172,20 +172,20 @@ contract PinkchainsawTest is Test {
     }
 
     function test_stampRemainingBalanceIncreases() public {
-        (, , , , uint256 remainingBefore) = IPostageStamp(POSTAGE_STAMP).batches(batchId);
+        (,,,, uint256 remainingBefore) = IPostageStamp(POSTAGE_STAMP).batches(batchId);
 
         vm.startPrank(alice);
         IERC20(BZZ).approve(address(board), type(uint256).max);
         board.createThread(bytes32Strings[0], batchId);
         vm.stopPrank();
 
-        (, , , , uint256 remainingAfter) = IPostageStamp(POSTAGE_STAMP).batches(batchId);
+        (,,,, uint256 remainingAfter) = IPostageStamp(POSTAGE_STAMP).batches(batchId);
 
         assertTrue(remainingAfter > remainingBefore, "stamp remainingBalance should increase");
     }
 
     function test_stampTopUpAmountMatchesFee() public {
-        (, uint8 depth, , , uint256 remainingBefore) = IPostageStamp(POSTAGE_STAMP).batches(batchId);
+        (, uint8 depth,,, uint256 remainingBefore) = IPostageStamp(POSTAGE_STAMP).batches(batchId);
         uint256 fee = board.getFee(alice);
         uint256 expectedPerChunk = fee / (1 << depth);
 
@@ -194,13 +194,15 @@ contract PinkchainsawTest is Test {
         board.createThread(bytes32Strings[0], batchId);
         vm.stopPrank();
 
-        (, , , , uint256 remainingAfter) = IPostageStamp(POSTAGE_STAMP).batches(batchId);
+        (,,,, uint256 remainingAfter) = IPostageStamp(POSTAGE_STAMP).batches(batchId);
 
-        assertEq(remainingAfter - remainingBefore, expectedPerChunk, "remaining balance should increase by amountPerChunk");
+        assertEq(
+            remainingAfter - remainingBefore, expectedPerChunk, "remaining balance should increase by amountPerChunk"
+        );
     }
 
     function test_multiplePostsAccumulateStampTopUp() public {
-        (, uint8 depth, , , uint256 remainingBefore) = IPostageStamp(POSTAGE_STAMP).batches(batchId);
+        (, uint8 depth,,, uint256 remainingBefore) = IPostageStamp(POSTAGE_STAMP).batches(batchId);
         uint256 fee = board.getFee(alice);
         uint256 expectedPerChunk = fee / (1 << depth);
 
@@ -211,7 +213,7 @@ contract PinkchainsawTest is Test {
         board.createThread(bytes32Strings[2], batchId);
         vm.stopPrank();
 
-        (, , , , uint256 remainingAfter) = IPostageStamp(POSTAGE_STAMP).batches(batchId);
+        (,,,, uint256 remainingAfter) = IPostageStamp(POSTAGE_STAMP).batches(batchId);
 
         assertEq(remainingAfter - remainingBefore, expectedPerChunk * 3, "3 posts should top up 3x");
     }
@@ -224,14 +226,14 @@ contract PinkchainsawTest is Test {
 
         bytes32[] memory threadIds = board.getPaginatedThreadIds(1, 1);
 
-        (, , , , uint256 remainingBefore) = IPostageStamp(POSTAGE_STAMP).batches(batchId);
+        (,,,, uint256 remainingBefore) = IPostageStamp(POSTAGE_STAMP).batches(batchId);
 
         vm.startPrank(bob);
         IERC20(BZZ).approve(address(board), type(uint256).max);
         board.createComment(threadIds[0], bytes32Strings[1], batchId);
         vm.stopPrank();
 
-        (, , , , uint256 remainingAfter) = IPostageStamp(POSTAGE_STAMP).batches(batchId);
+        (,,,, uint256 remainingAfter) = IPostageStamp(POSTAGE_STAMP).batches(batchId);
 
         assertTrue(remainingAfter > remainingBefore, "comment should top up the stamp");
     }
@@ -244,14 +246,14 @@ contract PinkchainsawTest is Test {
 
         bytes32[] memory threadIds = board.getPaginatedThreadIds(1, 1);
 
-        (, , , , uint256 remainingBefore) = IPostageStamp(POSTAGE_STAMP).batches(batchId);
+        (,,,, uint256 remainingBefore) = IPostageStamp(POSTAGE_STAMP).batches(batchId);
 
         vm.startPrank(bob);
         IERC20(BZZ).approve(address(board), type(uint256).max);
         board.upVote(threadIds[0]);
         vm.stopPrank();
 
-        (, , , , uint256 remainingAfter) = IPostageStamp(POSTAGE_STAMP).batches(batchId);
+        (,,,, uint256 remainingAfter) = IPostageStamp(POSTAGE_STAMP).batches(batchId);
 
         assertEq(remainingAfter, remainingBefore, "votes should not top up stamp");
     }

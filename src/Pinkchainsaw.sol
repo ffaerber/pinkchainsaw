@@ -5,13 +5,10 @@ import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
 interface IPostageStamp {
     function topUp(bytes32 _batchId, uint256 _topupAmountPerChunk) external;
-    function batches(bytes32) external view returns (
-        address owner,
-        uint8 depth,
-        uint8 bucketDepth,
-        bool immutableFlag,
-        uint256 remainingBalance
-    );
+    function batches(bytes32)
+        external
+        view
+        returns (address owner, uint8 depth, uint8 bucketDepth, bool immutableFlag, uint256 remainingBalance);
 }
 
 contract Pinkchainsaw {
@@ -55,7 +52,7 @@ contract Pinkchainsaw {
     }
 
     function _topUpStamp(bytes32 _batchId, uint256 _totalAmount) internal {
-        (, uint8 depth,,, ) = postageStamp.batches(_batchId);
+        (, uint8 depth,,,) = postageStamp.batches(_batchId);
         uint256 amountPerChunk = _totalAmount / (1 << depth);
         require(amountPerChunk > 0, "fee too small for batch depth");
         uint256 actualTotal = amountPerChunk * (1 << depth);
