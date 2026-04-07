@@ -1,5 +1,7 @@
 # Pink Chainsaw
 
+![demo](videos/demo.gif)
+
 A decentralized imageboard on Gnosis Chain with Ethereum Swarm storage.
 
 Users post images, comment, and vote using xBZZ tokens. Fees from posts and comments automatically top up the poster's Swarm postage stamp, keeping content alive on the network. A social score system rewards good content with lower fees and penalizes bad content with higher fees. Anyone can browse all content via a public Swarm gateway without a wallet.

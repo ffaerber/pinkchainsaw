@@ -2,7 +2,7 @@ import pinkchainsawAbi from '../abi/Pinkchainsaw.json'
 
 export const BZZ_TOKEN_ADDRESS = '0xdBF3Ea6F5beE45c02255B2c26a16F300502F68da' as const
 
-export const PINKCHAINSAW_ADDRESS = '0xFe73D7bBA8A6228Aa3Aa4f955A1031eb0E83f90e' as `0x${string}`
+export const PINKCHAINSAW_ADDRESS = '0x95cBdd7d64040C101240c93fc7B55EC6c2679368' as `0x${string}`
 
 export const PINKCHAINSAW_ABI = pinkchainsawAbi as readonly any[]
 

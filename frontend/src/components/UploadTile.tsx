@@ -1,13 +1,19 @@
 import { useCallback, useEffect } from 'react'
 import { useDropzone } from 'react-dropzone'
-import { useAccount, useWriteContract, useWaitForTransactionReceipt } from 'wagmi'
+import { useAccount, useReadContract, useWriteContract, useWaitForTransactionReceipt } from 'wagmi'
 import toast from 'react-hot-toast'
-import { PINKCHAINSAW_ABI, PINKCHAINSAW_ADDRESS } from '../config/contracts'
+import { PINKCHAINSAW_ABI, PINKCHAINSAW_ADDRESS, BZZ_TOKEN_ADDRESS, ERC20_ABI } from '../config/contracts'
 import { useBeeContext } from '../hooks/BeeContext'
 
 export default function UploadTile() {
-  const { isConnected } = useAccount()
+  const { isConnected, address } = useAccount()
   const { writer, batchId } = useBeeContext()
+
+  const { data: bzzAllowance } = useReadContract({
+    address: BZZ_TOKEN_ADDRESS, abi: ERC20_ABI, functionName: 'allowance',
+    args: address ? [address, PINKCHAINSAW_ADDRESS] : undefined, query: { enabled: !!address },
+  })
+  const hasAllowance = bzzAllowance && (bzzAllowance as bigint) > 0n
 
   const { writeContract, data: txHash } = useWriteContract()
   const { isSuccess } = useWaitForTransactionReceipt({ hash: txHash })
@@ -30,14 +36,14 @@ export default function UploadTile() {
         address: PINKCHAINSAW_ADDRESS,
         abi: PINKCHAINSAW_ABI,
         functionName: 'createThread',
-        args: [`0x${reference}`],
+        args: [`0x${reference}`, `0x${batchId}`],
       })
     } catch (e) {
       toast.error(`Upload failed: ${e}`)
     }
   }, [writer, batchId, writeContract])
 
-  const enabled = isConnected && !!batchId
+  const enabled = isConnected && !!batchId && !!hasAllowance
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,

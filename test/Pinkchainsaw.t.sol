@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Unlicense
-pragma solidity 0.8.20;
+pragma solidity 0.8.28;
 
 import "forge-std/Test.sol";
 import "../src/Pinkchainsaw.sol";
+import "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 contract PinkchainsawTest is Test {
     Pinkchainsaw public board;
@@ -19,7 +20,11 @@ contract PinkchainsawTest is Test {
     bytes32[] bytes32Strings;
 
     function setUp() public {
-        board = new Pinkchainsaw(BZZ, POSTAGE_STAMP);
+        Pinkchainsaw impl = new Pinkchainsaw();
+        ERC1967Proxy proxy = new ERC1967Proxy(
+            address(impl), abi.encodeCall(Pinkchainsaw.initialize, (BZZ, POSTAGE_STAMP))
+        );
+        board = Pinkchainsaw(address(proxy));
 
         // Fund wallets with real BZZ via whale
         vm.startPrank(BZZ_WHALE);

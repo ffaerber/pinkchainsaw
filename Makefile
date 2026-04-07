@@ -10,6 +10,7 @@ ETH_RPC_URL    ?= https://mainnet.ffaerber.duckdns.org
 ENS_NAME       ?= pinkchainsaw.eth
 ENS_REGISTRY    = 0x00000000000C2E074eC69A0dFb2997BA6C7d2e1e
 BZZ_TOKEN       = 0xdBF3Ea6F5beE45c02255B2c26a16F300502F68da
+POSTAGE_STAMP   = 0x45a1502382541Cd610CC9068e88727426b696293
 BATCH_ID       ?= $(shell curl -s $(BEE_API_URL)/stamps 2>/dev/null \
                    | python3 -c "import sys,json; s=json.load(sys.stdin).get('stamps',[]); print(s[0]['batchID'] if s else '')" 2>/dev/null)
 
@@ -102,23 +103,24 @@ typecheck: ## Type-check frontend
 # ============================================================
 
 .PHONY: deploy-contract
-deploy-contract: build ## Deploy contract to Gnosis Chain (uses .env MNEMONIC)
+deploy-contract: build ## Deploy contract (impl + proxy) to Gnosis Chain
 	@test -n "$(MNEMONIC)" || { echo "Error: set MNEMONIC in .env"; exit 1; }
-	forge create --rpc-url $(RPC_URL) \
-		--mnemonic "$(MNEMONIC)" \
+	BZZ_TOKEN=$(BZZ_TOKEN) POSTAGE_STAMP=$(POSTAGE_STAMP) \
+	forge script script/Deploy.s.sol:DeployScript \
+		--rpc-url $(RPC_URL) \
+		--mnemonics "$(MNEMONIC)" \
 		--broadcast \
-		src/Pinkchainsaw.sol:Pinkchainsaw \
-		--constructor-args $(BZZ_TOKEN) \
 		--verify \
 		--verifier blockscout \
 		--verifier-url https://gnosis.blockscout.com/api/
 
 .PHONY: deploy-contract-local
-deploy-contract-local: build ## Deploy contract to local Anvil
-	forge create --rpc-url $(LOCAL_RPC_URL) \
+deploy-contract-local: build ## Deploy contract (impl + proxy) to local Anvil
+	BZZ_TOKEN=$(BZZ_TOKEN) POSTAGE_STAMP=$(POSTAGE_STAMP) \
+	forge script script/Deploy.s.sol:DeployScript \
+		--rpc-url $(LOCAL_RPC_URL) \
 		--private-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 \
-		src/Pinkchainsaw.sol:Pinkchainsaw \
-		--constructor-args $(BZZ_TOKEN)
+		--broadcast
 
 .PHONY: verify-contract
 verify-contract: ## Verify existing contract on Blockscout (CONTRACT=0x...)

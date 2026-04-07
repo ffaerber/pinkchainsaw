@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useParams, Link } from 'react-router'
 import { useAccount, useReadContract, useWriteContract, useWaitForTransactionReceipt } from 'wagmi'
 import toast from 'react-hot-toast'
-import { PINKCHAINSAW_ABI, PINKCHAINSAW_ADDRESS } from '../config/contracts'
+import { PINKCHAINSAW_ABI, PINKCHAINSAW_ADDRESS, BZZ_TOKEN_ADDRESS, ERC20_ABI } from '../config/contracts'
 import { useBeeContext } from '../hooks/BeeContext'
 import CommentItem from './CommentItem'
 import EnsName from './EnsName'
@@ -11,6 +11,12 @@ export default function ThreadDetails() {
   const { threadId } = useParams<{ threadId: string }>()
   const { address } = useAccount()
   const { writer, readUrl, batchId } = useBeeContext()
+
+  const { data: bzzAllowance } = useReadContract({
+    address: BZZ_TOKEN_ADDRESS, abi: ERC20_ABI, functionName: 'allowance',
+    args: address ? [address, PINKCHAINSAW_ADDRESS] : undefined, query: { enabled: !!address },
+  })
+  const canWrite = !!address && !!batchId && bzzAllowance && (bzzAllowance as bigint) > 0n
 
   const { data: thread, refetch } = useReadContract({
     address: PINKCHAINSAW_ADDRESS,
@@ -61,7 +67,7 @@ export default function ThreadDetails() {
         address: PINKCHAINSAW_ADDRESS,
         abi: PINKCHAINSAW_ABI,
         functionName: 'createComment',
-        args: [threadId as `0x${string}`, `0x${reference}`],
+        args: [threadId as `0x${string}`, `0x${reference}`, `0x${batchId}`],
       })
     } catch (err) {
       toast.error(`Comment failed: ${err}`)
@@ -86,9 +92,9 @@ export default function ThreadDetails() {
       <div className="flex items-start gap-4 px-4 py-3 border-b border-[#252525]">
         {/* Votes */}
         <div className="flex items-center gap-1">
-          <button onClick={() => handleVote('upVote')} disabled={!address} className={`text-xl leading-none ${address ? 'text-[#888] hover:text-[#e84393] cursor-pointer' : 'text-[#444] cursor-not-allowed'}`}>+</button>
+          <button onClick={() => handleVote('upVote')} disabled={!canWrite} className={`text-xl leading-none ${canWrite ? 'text-[#888] hover:text-[#e84393] cursor-pointer' : 'text-[#444] cursor-not-allowed'}`}>+</button>
           <span className="text-[42px] font-light text-[#f2f5f4] leading-none px-2">{rating}</span>
-          <button onClick={() => handleVote('downVote')} disabled={!address} className={`text-xl leading-none ${address ? 'text-[#888] hover:text-[#f2f5f4] cursor-pointer' : 'text-[#444] cursor-not-allowed'}`}>-</button>
+          <button onClick={() => handleVote('downVote')} disabled={!canWrite} className={`text-xl leading-none ${canWrite ? 'text-[#888] hover:text-[#f2f5f4] cursor-pointer' : 'text-[#444] cursor-not-allowed'}`}>-</button>
         </div>
 
         <div className="flex-1" />
@@ -107,13 +113,13 @@ export default function ThreadDetails() {
       {/* Comment form */}
       <form onSubmit={submitComment} className="px-4 py-3 border-b border-[#252525]">
         <textarea
-          className={`w-full bg-[#1b1e1f] text-[#f2f5f4] border border-[#252525] rounded p-2 text-sm resize-y min-h-[60px] focus:border-[#e84393] focus:outline-none ${!address ? 'opacity-50 cursor-not-allowed' : ''}`}
+          className={`w-full bg-[#1b1e1f] text-[#f2f5f4] border border-[#252525] rounded p-2 text-sm resize-y min-h-[60px] focus:border-[#e84393] focus:outline-none ${!canWrite ? 'opacity-50 cursor-not-allowed' : ''}`}
           value={newComment}
           onChange={e => setNewComment(e.target.value)}
-          placeholder={address ? 'write a comment...' : 'connect wallet to comment...'}
-          disabled={!address}
+          placeholder={canWrite ? 'write a comment...' : 'connect & approve to comment...'}
+          disabled={!canWrite}
         />
-        <button type="submit" disabled={!address} className={`mt-2 px-4 py-1.5 bg-[#e84393] text-white text-sm rounded ${address ? 'hover:brightness-110' : 'opacity-50 cursor-not-allowed'}`}>
+        <button type="submit" disabled={!canWrite} className={`mt-2 px-4 py-1.5 bg-[#e84393] text-white text-sm rounded ${canWrite ? 'hover:brightness-110' : 'opacity-50 cursor-not-allowed'}`}>
           Comment
         </button>
       </form>

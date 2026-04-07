@@ -23,7 +23,15 @@
       "Bash(forge build:*)",
       "Bash(forge test:*)",
       "Bash(cast call:*)",
-      "Bash(forge fmt:*)"
+      "Bash(forge fmt:*)",
+      "Bash(make deploy-contract:*)",
+      "Bash(make abi:*)",
+      "Bash(cast tx:*)",
+      "Bash(cast receipt:*)",
+      "Bash(cast 4byte 0xc1123981)",
+      "Read(//home/ffaerber/**)",
+      "Bash(ffmpeg -i \"/home/ffaerber/Videos/2026-04-07 15-29-43.mp4\" -vf \"fps=10,scale=800:-1\" -loop 0 /home/ffaerber/Documents/github/ffaerber/pinkchainsaw/videos/demo.gif)",
+      "Bash(ffmpeg -y -i \"/home/ffaerber/Videos/2026-04-07 15-29-43.mp4\" -vf \"setpts=0.5*PTS,fps=10,scale=800:-1\" -loop 0 /home/ffaerber/Documents/github/ffaerber/pinkchainsaw/videos/demo.gif)"
     ]
   }
 }

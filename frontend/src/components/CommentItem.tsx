@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useAccount, useReadContract, useWriteContract, useWaitForTransactionReceipt } from 'wagmi'
 import toast from 'react-hot-toast'
-import { PINKCHAINSAW_ABI, PINKCHAINSAW_ADDRESS } from '../config/contracts'
+import { PINKCHAINSAW_ABI, PINKCHAINSAW_ADDRESS, BZZ_TOKEN_ADDRESS, ERC20_ABI } from '../config/contracts'
 import { useBeeContext } from '../hooks/BeeContext'
 import EnsName from './EnsName'
 
@@ -13,6 +13,12 @@ interface CommentItemProps {
 export default function CommentItem({ commentId, depth }: CommentItemProps) {
   const { address } = useAccount()
   const { reader, writer, batchId } = useBeeContext()
+
+  const { data: bzzAllowance } = useReadContract({
+    address: BZZ_TOKEN_ADDRESS, abi: ERC20_ABI, functionName: 'allowance',
+    args: address ? [address, PINKCHAINSAW_ADDRESS] : undefined, query: { enabled: !!address },
+  })
+  const canWrite = !!address && !!batchId && bzzAllowance && (bzzAllowance as bigint) > 0n
 
   const { data: comment, refetch } = useReadContract({
     address: PINKCHAINSAW_ADDRESS,
@@ -70,7 +76,7 @@ export default function CommentItem({ commentId, depth }: CommentItemProps) {
         address: PINKCHAINSAW_ADDRESS,
         abi: PINKCHAINSAW_ABI,
         functionName: 'createComment',
-        args: [commentId as `0x${string}`, `0x${reference}`],
+        args: [commentId as `0x${string}`, `0x${reference}`, `0x${batchId}`],
       })
     } catch (err) {
       toast.error(`Reply failed: ${err}`)
@@ -92,8 +98,8 @@ export default function CommentItem({ commentId, depth }: CommentItemProps) {
 
         {/* Comment footer */}
         <div className="flex items-center gap-3 mt-1 pb-2 border-b border-[#252525] text-xs text-[#888]">
-          <button onClick={() => handleVote('upVote')} disabled={!address} className={address ? 'hover:text-[#e84393] cursor-pointer' : 'text-[#444] cursor-not-allowed'}>+</button>
-          <button onClick={() => handleVote('downVote')} disabled={!address} className={address ? 'hover:text-[#f2f5f4] cursor-pointer' : 'text-[#444] cursor-not-allowed'}>-</button>
+          <button onClick={() => handleVote('upVote')} disabled={!canWrite} className={canWrite ? 'hover:text-[#e84393] cursor-pointer' : 'text-[#444] cursor-not-allowed'}>+</button>
+          <button onClick={() => handleVote('downVote')} disabled={!canWrite} className={canWrite ? 'hover:text-[#f2f5f4] cursor-pointer' : 'text-[#444] cursor-not-allowed'}>-</button>
           <span className={rating > 0 ? 'text-[#e84393]' : rating < 0 ? 'text-[#f2f5f4]' : ''}>{rating}</span>
           <EnsName address={owner} className="font-mono truncate max-w-[100px]" />
           <span>
@@ -101,7 +107,7 @@ export default function CommentItem({ commentId, depth }: CommentItemProps) {
               year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
             })}
           </span>
-          <button onClick={() => setReplyOpen(!replyOpen)} disabled={!address} className={address ? 'hover:text-[#e84393] cursor-pointer' : 'text-[#444] cursor-not-allowed'}>
+          <button onClick={() => setReplyOpen(!replyOpen)} disabled={!canWrite} className={canWrite ? 'hover:text-[#e84393] cursor-pointer' : 'text-[#444] cursor-not-allowed'}>
             reply
           </button>
         </div>

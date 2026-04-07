@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Unlicense
-pragma solidity 0.8.20;
+pragma solidity 0.8.28;
 
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import "@openzeppelin/contracts/proxy/utils/Initializable.sol";
+import "@openzeppelin/contracts/proxy/utils/UUPSUpgradeable.sol";
 
 interface IPostageStamp {
     function topUp(bytes32 _batchId, uint256 _topupAmountPerChunk) external;
@@ -11,11 +13,17 @@ interface IPostageStamp {
         returns (address owner, uint8 depth, uint8 bucketDepth, bool immutableFlag, uint256 remainingBalance);
 }
 
-contract Pinkchainsaw {
-    uint256 public bzzFee = 10 ** 13;
+contract Pinkchainsaw is Initializable, UUPSUpgradeable {
+    address public owner;
+    uint256 public bzzFee;
 
     ERC20 public bzzToken;
     IPostageStamp public postageStamp;
+
+    modifier onlyOwner() {
+        require(msg.sender == owner, "not owner");
+        _;
+    }
     bytes32[] private threadIds;
 
     mapping(bytes32 => Post) private posts;
@@ -46,10 +54,19 @@ contract Pinkchainsaw {
         PostType postType;
     }
 
-    constructor(address _bzzTokenAddress, address _postageStampAddress) {
+    /// @custom:oz-upgrades-unsafe-allow constructor
+    constructor() {
+        _disableInitializers();
+    }
+
+    function initialize(address _bzzTokenAddress, address _postageStampAddress) public initializer {
+        owner = msg.sender;
         bzzToken = ERC20(_bzzTokenAddress);
         postageStamp = IPostageStamp(_postageStampAddress);
+        bzzFee = 10 ** 13;
     }
+
+    function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
 
     function _topUpStamp(bytes32 _batchId, uint256 _totalAmount) internal {
         (, uint8 depth,,,) = postageStamp.batches(_batchId);
