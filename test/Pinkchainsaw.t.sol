@@ -386,6 +386,121 @@ contract PinkchainsawTest is Test {
         _assertContains(thread.commentIds, aliceCommentIds[0]);
     }
 
+    function test_upVoteTransfersExactFee() public {
+        vm.startPrank(alice);
+        IERC20(BZZ).approve(address(board), type(uint256).max);
+        board.createThread(bytes32Strings[0], batchId);
+        vm.stopPrank();
+
+        bytes32[] memory threadIds = board.getPaginatedThreadIds(1, 1);
+
+        uint256 fee = board.getFee(bob);
+        uint256 aliceBefore = IERC20(BZZ).balanceOf(alice);
+        uint256 bobBefore = IERC20(BZZ).balanceOf(bob);
+
+        vm.startPrank(bob);
+        IERC20(BZZ).approve(address(board), type(uint256).max);
+        board.upVote(threadIds[0]);
+        vm.stopPrank();
+
+        assertEq(IERC20(BZZ).balanceOf(alice) - aliceBefore, fee, "alice should receive exactly fee");
+        assertEq(bobBefore - IERC20(BZZ).balanceOf(bob), fee, "bob should spend exactly fee");
+    }
+
+    function test_downVoteTransfersExactFeeToOwner() public {
+        vm.startPrank(alice);
+        IERC20(BZZ).approve(address(board), type(uint256).max);
+        board.createThread(bytes32Strings[0], batchId);
+        vm.stopPrank();
+
+        bytes32[] memory threadIds = board.getPaginatedThreadIds(1, 1);
+
+        uint256 fee = board.getFee(bob);
+        uint256 aliceBefore = IERC20(BZZ).balanceOf(alice);
+        uint256 bobBefore = IERC20(BZZ).balanceOf(bob);
+
+        vm.startPrank(bob);
+        IERC20(BZZ).approve(address(board), type(uint256).max);
+        board.downVote(threadIds[0]);
+        vm.stopPrank();
+
+        assertEq(IERC20(BZZ).balanceOf(alice) - aliceBefore, fee, "alice should receive exactly fee on downvote");
+        assertEq(bobBefore - IERC20(BZZ).balanceOf(bob), fee, "bob should spend exactly fee on downvote");
+    }
+
+    function test_feeScalesWithNegativeSocialScore() public {
+        // alice starts at score 0 → multiplier 3
+        assertEq(board.getFee(alice), board.bzzFee() * 3);
+
+        // bob creates a thread so alice can downvote it (driving alice's own votes, not her score)
+        vm.startPrank(bob);
+        IERC20(BZZ).approve(address(board), type(uint256).max);
+        board.createThread(bytes32Strings[0], batchId);
+        vm.stopPrank();
+
+        // carol downvotes alice's thread to push alice's social score negative
+        vm.startPrank(alice);
+        IERC20(BZZ).approve(address(board), type(uint256).max);
+        board.createThread(bytes32Strings[1], batchId);
+        vm.stopPrank();
+
+        bytes32[] memory allThreads = board.getPaginatedThreadIds(1, 2);
+        bytes32 aliceThread = allThreads[1];
+
+        vm.startPrank(carol);
+        IERC20(BZZ).approve(address(board), type(uint256).max);
+        board.downVote(aliceThread);
+        vm.stopPrank();
+
+        // alice score: -1 → multiplier 4
+        assertEq(board.getSocialScore(alice), -1);
+        assertEq(board.getFee(alice), board.bzzFee() * 4);
+
+        vm.prank(carol);
+        board.downVote(aliceThread);
+
+        // alice score: -2 → multiplier 5
+        assertEq(board.getSocialScore(alice), -2);
+        assertEq(board.getFee(alice), board.bzzFee() * 5);
+    }
+
+    function test_feeScalesWithPositiveSocialScore() public {
+        vm.startPrank(alice);
+        IERC20(BZZ).approve(address(board), type(uint256).max);
+        board.createThread(bytes32Strings[0], batchId);
+        vm.stopPrank();
+
+        bytes32[] memory threadIds = board.getPaginatedThreadIds(1, 1);
+
+        vm.startPrank(bob);
+        IERC20(BZZ).approve(address(board), type(uint256).max);
+        board.upVote(threadIds[0]);
+        vm.stopPrank();
+
+        // alice score: 1 → multiplier 2
+        assertEq(board.getFee(alice), board.bzzFee() * 2);
+
+        vm.prank(bob);
+        board.upVote(threadIds[0]);
+
+        // alice score: 2 → multiplier 1
+        assertEq(board.getFee(alice), board.bzzFee() * 1);
+    }
+
+    function test_voteFailsWithoutApproval() public {
+        vm.startPrank(alice);
+        IERC20(BZZ).approve(address(board), type(uint256).max);
+        board.createThread(bytes32Strings[0], batchId);
+        vm.stopPrank();
+
+        bytes32[] memory threadIds = board.getPaginatedThreadIds(1, 1);
+
+        // bob has BZZ but has not approved the board
+        vm.prank(bob);
+        vm.expectRevert();
+        board.upVote(threadIds[0]);
+    }
+
     function _assertContains(bytes32[] memory haystack, bytes32 needle) internal pure {
         bool found = false;
         for (uint256 i = 0; i < haystack.length; i++) {
