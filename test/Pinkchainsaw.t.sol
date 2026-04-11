@@ -21,9 +21,8 @@ contract PinkchainsawTest is Test {
 
     function setUp() public {
         Pinkchainsaw impl = new Pinkchainsaw();
-        ERC1967Proxy proxy = new ERC1967Proxy(
-            address(impl), abi.encodeCall(Pinkchainsaw.initialize, (BZZ, POSTAGE_STAMP))
-        );
+        ERC1967Proxy proxy =
+            new ERC1967Proxy(address(impl), abi.encodeCall(Pinkchainsaw.initialize, (BZZ, POSTAGE_STAMP)));
         board = Pinkchainsaw(address(proxy));
 
         // Fund wallets with real BZZ via whale

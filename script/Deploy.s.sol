@@ -16,9 +16,8 @@ contract DeployScript is Script {
         Pinkchainsaw impl = new Pinkchainsaw();
 
         // 2. Deploy proxy with initialize call
-        ERC1967Proxy proxy = new ERC1967Proxy(
-            address(impl), abi.encodeCall(Pinkchainsaw.initialize, (bzzToken, postageStamp))
-        );
+        ERC1967Proxy proxy =
+            new ERC1967Proxy(address(impl), abi.encodeCall(Pinkchainsaw.initialize, (bzzToken, postageStamp)));
 
         vm.stopBroadcast();
 
