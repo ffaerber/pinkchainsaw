@@ -5,6 +5,7 @@ interface ImportMetaEnv {
   readonly VITE_RPC_URL: string
   readonly VITE_BEE_GATEWAY_URL: string
   readonly VITE_BEE_API_URL: string
+  readonly VITE_ENS_RPC_URL: string
 }
 
 interface ImportMeta {

@@ -31,15 +31,27 @@ contract Pinkchainsaw is Initializable, UUPSUpgradeable {
     mapping(address => bytes32[]) private addressToCommentIds;
     mapping(address => int256) private addressToSocialScore;
 
+    // Appended after the original layout. New state must be added at the end so that
+    // storage of the already deployed proxy stays valid across upgrades.
+    mapping(bytes32 => mapping(address => int256)) private postToVoterToVote;
+
     enum PostType {
         THREAD,
         COMMENT
     }
 
-    event ThreadCreated(bytes32 bzzhash);
-    event ThreadUpdated(bytes32 bzzhash);
-    event CommentUpdated(bytes32 bzzhash);
-    event CommentCreated(bytes32 bzzhash);
+    // Domain separators keep thread ids and comment ids in disjoint namespaces, so a
+    // comment can never land on the storage slot of a thread.
+    bytes32 private constant THREAD_DOMAIN = keccak256("pinkchainsaw.thread");
+    bytes32 private constant COMMENT_DOMAIN = keccak256("pinkchainsaw.comment");
+
+    int256 private constant UP_VOTE = 1;
+    int256 private constant DOWN_VOTE = -1;
+
+    event ThreadCreated(bytes32 id);
+    event ThreadUpdated(bytes32 id);
+    event CommentUpdated(bytes32 id);
+    event CommentCreated(bytes32 id);
 
     struct Post {
         bytes32 id;
@@ -60,6 +72,9 @@ contract Pinkchainsaw is Initializable, UUPSUpgradeable {
     }
 
     function initialize(address _bzzTokenAddress, address _postageStampAddress) public initializer {
+        require(_bzzTokenAddress != address(0), "bzz token is zero address");
+        require(_postageStampAddress != address(0), "postage stamp is zero address");
+
         owner = msg.sender;
         bzzToken = ERC20(_bzzTokenAddress);
         postageStamp = IPostageStamp(_postageStampAddress);
@@ -78,14 +93,20 @@ contract Pinkchainsaw is Initializable, UUPSUpgradeable {
         postageStamp.topUp(_batchId, amountPerChunk);
     }
 
+    /// @notice Pages are 1-indexed. Out of range pages return an empty array, and the last
+    /// page is zero padded up to _resultsPerPage.
     function getPaginatedThreadIds(uint256 _page, uint256 _resultsPerPage)
         external
         view
         returns (bytes32[] memory data)
     {
-        uint256 _index = _resultsPerPage * _page - _resultsPerPage;
+        if (_page == 0 || _resultsPerPage == 0) {
+            return new bytes32[](0);
+        }
 
-        if (threadIds.length == 0 || _index >= threadIds.length) {
+        uint256 _index = _resultsPerPage * (_page - 1);
+
+        if (_index >= threadIds.length) {
             return new bytes32[](0);
         }
 
@@ -104,11 +125,8 @@ contract Pinkchainsaw is Initializable, UUPSUpgradeable {
     }
 
     function createThread(bytes32 _threadBzzhash, bytes32 _batchId) public returns (bool succeed) {
-        bytes32 threadId = keccak256(abi.encode(msg.sender, _threadBzzhash));
+        bytes32 threadId = threadIdOf(msg.sender, _threadBzzhash);
         require(!posts[threadId].exists, "thread already exists");
-
-        uint256 fee = getFee(msg.sender);
-        _topUpStamp(_batchId, fee);
 
         posts[threadId] = Post({
             id: threadId,
@@ -125,7 +143,24 @@ contract Pinkchainsaw is Initializable, UUPSUpgradeable {
         threadIds.push(threadId);
         addressToThreadIds[msg.sender].push(threadId);
         emit ThreadCreated(threadId);
+
+        _topUpStamp(_batchId, getFee(msg.sender));
         return true;
+    }
+
+    /// @notice A thread is unique per (owner, bzzhash), so the same image cannot be posted twice.
+    function threadIdOf(address _owner, bytes32 _bzzhash) public pure returns (bytes32) {
+        return keccak256(abi.encode(THREAD_DOMAIN, _owner, _bzzhash));
+    }
+
+    /// @notice A comment is unique per (owner, bzzhash, parent, position under that parent), so the
+    /// same text may be posted again without overwriting the earlier comment.
+    function commentIdOf(address _owner, bytes32 _bzzhash, bytes32 _parentId, uint256 _index)
+        public
+        pure
+        returns (bytes32)
+    {
+        return keccak256(abi.encode(COMMENT_DOMAIN, _owner, _bzzhash, _parentId, _index));
     }
 
     function getThread(bytes32 _id) external view returns (Post memory) {
@@ -146,14 +181,14 @@ contract Pinkchainsaw is Initializable, UUPSUpgradeable {
     function createComment(bytes32 _id, bytes32 _commentBzzhash, bytes32 _batchId) public returns (bool succeed) {
         Post storage post = posts[_id];
         require(post.exists, "thread or comment doesn't exist");
-        bytes32 commentId = keccak256(abi.encode(msg.sender, _commentBzzhash));
 
-        uint256 fee = getFee(msg.sender);
-        _topUpStamp(_batchId, fee);
+        uint256 commentIndex = post.commentIds.length;
+        bytes32 commentId = commentIdOf(msg.sender, _commentBzzhash, _id, commentIndex);
+        require(!posts[commentId].exists, "comment already exists");
 
         posts[commentId] = Post({
             id: commentId,
-            index: 0,
+            index: commentIndex,
             timestamp: block.timestamp,
             owner: msg.sender,
             bzzhash: _commentBzzhash,
@@ -174,6 +209,7 @@ contract Pinkchainsaw is Initializable, UUPSUpgradeable {
         }
         emit CommentCreated(commentId);
 
+        _topUpStamp(_batchId, getFee(msg.sender));
         return true;
     }
 
@@ -189,41 +225,43 @@ contract Pinkchainsaw is Initializable, UUPSUpgradeable {
     }
 
     function upVote(bytes32 _id) public returns (bool succeed) {
-        Post storage post = posts[_id];
-        require(post.exists, "thread or comment doesn't exist");
-        require(msg.sender != post.owner, "cannot vote on own post");
-
-        uint256 fee = getFee(msg.sender);
-        require(bzzToken.transferFrom(msg.sender, post.owner, fee), "transfer failed");
-
-        post.rating++;
-        addressToSocialScore[post.owner]++;
-        if (post.postType == PostType.COMMENT) {
-            emit CommentUpdated(post.id);
-        }
-        if (post.postType == PostType.THREAD) {
-            emit ThreadUpdated(post.id);
-        }
+        _vote(_id, UP_VOTE);
         return true;
     }
 
     function downVote(bytes32 _id) public returns (bool succeed) {
+        _vote(_id, DOWN_VOTE);
+        return true;
+    }
+
+    /// @notice Returns the vote an address has cast on a post: 1, -1, or 0 when it has not voted.
+    function getVote(bytes32 _id, address voter) public view returns (int256) {
+        return postToVoterToVote[_id][voter];
+    }
+
+    /// @dev One vote per address per post. A voter may flip an existing vote, which costs another
+    /// fee and moves the rating by two, but may not repeat a vote it has already cast.
+    function _vote(bytes32 _id, int256 _direction) internal {
         Post storage post = posts[_id];
         require(post.exists, "thread or comment doesn't exist");
         require(msg.sender != post.owner, "cannot vote on own post");
 
-        uint256 fee = getFee(msg.sender);
-        require(bzzToken.transferFrom(msg.sender, post.owner, fee), "transfer failed");
+        int256 previousVote = postToVoterToVote[_id][msg.sender];
+        require(previousVote != _direction, "already voted");
+        postToVoterToVote[_id][msg.sender] = _direction;
 
-        post.rating--;
-        addressToSocialScore[post.owner]--;
+        int256 delta = _direction - previousVote;
+        post.rating += delta;
+        addressToSocialScore[post.owner] += delta;
+
         if (post.postType == PostType.COMMENT) {
             emit CommentUpdated(post.id);
         }
         if (post.postType == PostType.THREAD) {
             emit ThreadUpdated(post.id);
         }
-        return true;
+
+        require(bzzToken.transferFrom(msg.sender, post.owner, getFee(msg.sender)), "transfer failed");
     }
 
     function getSocialScore(address addr) public view returns (int256) {

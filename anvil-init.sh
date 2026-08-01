@@ -1,8 +1,20 @@
 #!/bin/sh
 set -e
 
-RPC_URL="${ETH_RPC_URL:-http://localhost:8545}"
+# Local Anvil fork only. Never point this at a real network: it impersonates accounts
+# and deploys with a well known development key.
+RPC_URL="${LOCAL_RPC_URL:-http://localhost:8545}"
+
+case "$RPC_URL" in
+    http://localhost:*|http://127.0.0.1:*) ;;
+    *)
+        echo "Refusing to run against $RPC_URL - this script is for a local Anvil fork only."
+        exit 1
+        ;;
+esac
+
 BZZ_TOKEN="0xdBF3Ea6F5beE45c02255B2c26a16F300502F68da"
+POSTAGE_STAMP="0x45a1502382541Cd610CC9068e88727426b696293"
 
 # Anvil deterministic wallets
 DEPLOYER="0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"
@@ -16,6 +28,8 @@ PROJECT_WALLET="0x798EF0F261BD5C18FA9Ddaa197341074bDedaAD4"
 
 # BZZ whale on Gnosis Chain (Postage Stamp contract)
 BZZ_WHALE="0x781c6D1f0eaE6F1Da1F604c6cDCcdB8B76428ba7"
+
+DEPLOYER_KEY="0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
 
 echo "=== Funding wallets with xDAI ==="
 for WALLET in $DEPLOYER $ALICE $BOB $CAROL $DAVE $PROJECT_WALLET; do
@@ -40,21 +54,27 @@ done
 
 cast rpc --rpc-url $RPC_URL anvil_stopImpersonatingAccount "$BZZ_WHALE"
 
-echo "=== Deploying Pinkchainsaw contract ==="
-DEPLOYED=$(forge create --rpc-url $RPC_URL \
-    --private-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 \
-    src/Pinkchainsaw.sol:Pinkchainsaw \
-    --constructor-args $BZZ_TOKEN)
+# Pinkchainsaw is a UUPS contract: the deploy script publishes the implementation and an
+# ERC1967 proxy, then calls initialize through the proxy. The proxy is the usable address.
+echo "=== Deploying Pinkchainsaw (implementation + proxy) ==="
+DEPLOY_OUTPUT=$(BZZ_TOKEN=$BZZ_TOKEN POSTAGE_STAMP=$POSTAGE_STAMP \
+    forge script script/Deploy.s.sol:DeployScript \
+    --rpc-url $RPC_URL \
+    --private-key $DEPLOYER_KEY \
+    --broadcast)
 
-CONTRACT_ADDRESS=$(echo "$DEPLOYED" | grep "Deployed to:" | awk '{print $3}')
-echo "Pinkchainsaw deployed at: $CONTRACT_ADDRESS"
+echo "$DEPLOY_OUTPUT"
 
+CONTRACT_ADDRESS=$(echo "$DEPLOY_OUTPUT" | grep "Proxy:" | tail -1 | awk '{print $2}')
+test -n "$CONTRACT_ADDRESS" || { echo "Could not read the proxy address from the deploy output"; exit 1; }
+
+echo "Pinkchainsaw proxy deployed at: $CONTRACT_ADDRESS"
 echo "$CONTRACT_ADDRESS" > contract-address.txt
 
 echo "=== Approving BZZ for all wallets ==="
 MAX_UINT256="115792089237316195423570985008687907853269984665640564039457584007913129639935"
 
-KEYS="0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
+KEYS="$DEPLOYER_KEY
 0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d
 0x5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a
 0x7c852118294e51e653712a81e05800f419141751be58f605c371e15141b007a6
@@ -73,3 +93,4 @@ echo "Chain: Gnosis (forked)"
 echo ""
 echo "Set in frontend/.env:"
 echo "  VITE_CONTRACT_ADDRESS=$CONTRACT_ADDRESS"
+echo "  VITE_RPC_URL=$RPC_URL"

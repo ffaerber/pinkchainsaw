@@ -1,7 +1,10 @@
+import { useState } from 'react'
 import { useAccount, useBalance, useConnect, useDisconnect, useReadContract, useWriteContract, useWaitForTransactionReceipt } from 'wagmi'
 import { maxUint256 } from 'viem'
+import toast from 'react-hot-toast'
 import { BZZ_TOKEN_ADDRESS, ERC20_ABI, PINKCHAINSAW_ADDRESS } from '../config/contracts'
 import { useBeeContext } from '../hooks/BeeContext'
+import { txErrorMessage } from '../lib/errors'
 
 interface ModalProps {
   handleClose: () => void
@@ -12,6 +15,9 @@ export default function Modal({ handleClose }: ModalProps) {
   const { connect, connectors } = useConnect()
   const { disconnect } = useDisconnect()
   const { isConnected: beeConnected, peerCount, allBatches, batchId, selectBatch, beeUrl, updateBeeUrl } = useBeeContext()
+
+  // Kept local so that typing a URL does not rebuild the Bee client on every keystroke
+  const [beeUrlInput, setBeeUrlInput] = useState(beeUrl)
 
   const { data: xdaiBalance } = useBalance({ address })
   const hasXdai = xdaiBalance && xdaiBalance.value > 0n
@@ -28,7 +34,9 @@ export default function Modal({ handleClose }: ModalProps) {
   })
   const hasAllowance = bzzAllowance && (bzzAllowance as bigint) > 0n
 
-  const { writeContract, data: approveTxHash } = useWriteContract()
+  const { writeContract, data: approveTxHash } = useWriteContract({
+    mutation: { onError: (err) => toast.error(txErrorMessage(err)) },
+  })
   const { isSuccess: approveSuccess } = useWaitForTransactionReceipt({ hash: approveTxHash })
 
   const handleApprove = () => {
@@ -51,7 +59,13 @@ export default function Modal({ handleClose }: ModalProps) {
                     <a onClick={() => disconnect()} className="text-[#e84393] underline cursor-pointer">disconnect</a>
                   </span>
                 ) : (
-                  <span className="text-[#888]">No wallet — <a onClick={() => connect({ connector: connectors[0] })} className="text-[#e84393] underline cursor-pointer">connect now</a></span>
+                  <span className="text-[#888]">
+                    {connectors.length > 0 ? (
+                      <>No wallet — <a onClick={() => connect({ connector: connectors[0] })} className="text-[#e84393] underline cursor-pointer">connect now</a></>
+                    ) : (
+                      <>No injected wallet found — install <a target="_blank" href="https://metamask.io/" className="text-[#e84393] underline">MetaMask</a></>
+                    )}
+                  </span>
                 )}
               </div>
             </li>
@@ -66,8 +80,10 @@ export default function Modal({ handleClose }: ModalProps) {
                 </span>
                 <input
                   type="text"
-                  value={beeUrl}
-                  onChange={e => updateBeeUrl(e.target.value)}
+                  value={beeUrlInput}
+                  onChange={e => setBeeUrlInput(e.target.value)}
+                  onBlur={() => { if (beeUrlInput !== beeUrl) updateBeeUrl(beeUrlInput) }}
+                  onKeyDown={e => { if (e.key === 'Enter') updateBeeUrl(beeUrlInput) }}
                   placeholder="http://localhost:1633"
                   className="mt-1 w-full bg-[#161618] border border-[#252525] rounded text-sm text-[#f2f5f4] p-1"
                 />

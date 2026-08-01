@@ -45,6 +45,40 @@
   },
   {
     "type": "function",
+    "name": "commentIdOf",
+    "inputs": [
+      {
+        "name": "_owner",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "_bzzhash",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "_parentId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "_index",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "stateMutability": "pure"
+  },
+  {
+    "type": "function",
     "name": "createComment",
     "inputs": [
       {
@@ -391,6 +425,30 @@
   },
   {
     "type": "function",
+    "name": "getVote",
+    "inputs": [
+      {
+        "name": "_id",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "voter",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "int256",
+        "internalType": "int256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "initialize",
     "inputs": [
       {
@@ -448,6 +506,30 @@
   },
   {
     "type": "function",
+    "name": "threadIdOf",
+    "inputs": [
+      {
+        "name": "_owner",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "_bzzhash",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "stateMutability": "pure"
+  },
+  {
+    "type": "function",
     "name": "upVote",
     "inputs": [
       {
@@ -488,7 +570,7 @@
     "name": "CommentCreated",
     "inputs": [
       {
-        "name": "bzzhash",
+        "name": "id",
         "type": "bytes32",
         "indexed": false,
         "internalType": "bytes32"
@@ -501,7 +583,7 @@
     "name": "CommentUpdated",
     "inputs": [
       {
-        "name": "bzzhash",
+        "name": "id",
         "type": "bytes32",
         "indexed": false,
         "internalType": "bytes32"
@@ -527,7 +609,7 @@
     "name": "ThreadCreated",
     "inputs": [
       {
-        "name": "bzzhash",
+        "name": "id",
         "type": "bytes32",
         "indexed": false,
         "internalType": "bytes32"
@@ -540,7 +622,7 @@
     "name": "ThreadUpdated",
     "inputs": [
       {
-        "name": "bzzhash",
+        "name": "id",
         "type": "bytes32",
         "indexed": false,
         "internalType": "bytes32"

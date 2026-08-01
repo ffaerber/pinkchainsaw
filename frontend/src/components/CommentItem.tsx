@@ -1,9 +1,14 @@
 import { useEffect, useState } from 'react'
-import { useAccount, useReadContract, useWriteContract, useWaitForTransactionReceipt } from 'wagmi'
+import { useAccount, useReadContract, useWatchContractEvent, useWriteContract, useWaitForTransactionReceipt } from 'wagmi'
 import toast from 'react-hot-toast'
 import { PINKCHAINSAW_ABI, PINKCHAINSAW_ADDRESS, BZZ_TOKEN_ADDRESS, ERC20_ABI } from '../config/contracts'
 import { useBeeContext } from '../hooks/BeeContext'
+import { txErrorMessage } from '../lib/errors'
 import EnsName from './EnsName'
+
+// Reply chains are unbounded on chain, so stop recursing before a deep chain can
+// exhaust the render stack. Deeper replies stay reachable from the last rendered comment.
+const MAX_DEPTH = 12
 
 interface CommentItemProps {
   commentId: string
@@ -39,13 +44,35 @@ export default function CommentItem({ commentId, depth }: CommentItemProps) {
       .catch(() => setCommentText('[failed to load]'))
   }, [reader, post?.bzzhash])
 
+  // The vote this account has already cast: 1, -1, or 0
+  const { data: myVote, refetch: refetchVote } = useReadContract({
+    address: PINKCHAINSAW_ADDRESS,
+    abi: PINKCHAINSAW_ABI,
+    functionName: 'getVote',
+    args: address ? [commentId as `0x${string}`, address] : undefined,
+    query: { enabled: !!address },
+  })
+  const castVote = Number(myVote ?? 0)
+
+  // Refresh when anyone votes on or replies to this comment
+  useWatchContractEvent({
+    address: PINKCHAINSAW_ADDRESS,
+    abi: PINKCHAINSAW_ABI,
+    eventName: 'CommentUpdated',
+    onLogs(logs) {
+      if (logs.some(log => (log as any).args?.id === commentId)) refetch()
+    },
+  })
+
   // Voting
-  const { writeContract: writeVote, data: voteTxHash } = useWriteContract()
+  const { writeContract: writeVote, data: voteTxHash, isPending: votePending } = useWriteContract({
+    mutation: { onError: (err) => toast.error(txErrorMessage(err)) },
+  })
   const { isSuccess: voteSuccess } = useWaitForTransactionReceipt({ hash: voteTxHash })
 
   useEffect(() => {
-    if (voteSuccess) { toast.success('Vote recorded!'); refetch() }
-  }, [voteSuccess, refetch])
+    if (voteSuccess) { toast.success('Vote recorded!'); refetch(); refetchVote() }
+  }, [voteSuccess, refetch, refetchVote])
 
   const handleVote = (fn: 'upVote' | 'downVote') => {
     writeVote({
@@ -59,7 +86,10 @@ export default function CommentItem({ commentId, depth }: CommentItemProps) {
   // Reply
   const [replyOpen, setReplyOpen] = useState(false)
   const [newComment, setNewComment] = useState('')
-  const { writeContract: writeReply, data: replyTxHash } = useWriteContract()
+  const [uploading, setUploading] = useState(false)
+  const { writeContract: writeReply, data: replyTxHash, isPending: replyPending } = useWriteContract({
+    mutation: { onError: (err) => toast.error(txErrorMessage(err)) },
+  })
   const { isSuccess: replySuccess } = useWaitForTransactionReceipt({ hash: replyTxHash })
 
   useEffect(() => {
@@ -69,6 +99,7 @@ export default function CommentItem({ commentId, depth }: CommentItemProps) {
   const submitReply = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!newComment || !batchId) return
+    setUploading(true)
     try {
       toast('Uploading reply...')
       const { reference } = await writer.uploadData(batchId, newComment)
@@ -79,7 +110,9 @@ export default function CommentItem({ commentId, depth }: CommentItemProps) {
         args: [commentId as `0x${string}`, `0x${reference}`, `0x${batchId}`],
       })
     } catch (err) {
-      toast.error(`Reply failed: ${err}`)
+      toast.error(`Reply failed: ${txErrorMessage(err)}`)
+    } finally {
+      setUploading(false)
     }
   }
 
@@ -98,8 +131,22 @@ export default function CommentItem({ commentId, depth }: CommentItemProps) {
 
         {/* Comment footer */}
         <div className="flex items-center gap-3 mt-1 pb-2 border-b border-[#252525] text-xs text-[#888]">
-          <button onClick={() => handleVote('upVote')} disabled={!canWrite} className={canWrite ? 'hover:text-[#e84393] cursor-pointer' : 'text-[#444] cursor-not-allowed'}>+</button>
-          <button onClick={() => handleVote('downVote')} disabled={!canWrite} className={canWrite ? 'hover:text-[#f2f5f4] cursor-pointer' : 'text-[#444] cursor-not-allowed'}>-</button>
+          <button
+            onClick={() => handleVote('upVote')}
+            disabled={!canWrite || votePending || castVote === 1}
+            title={castVote === 1 ? 'already upvoted' : 'upvote'}
+            className={castVote === 1 ? 'text-[#e84393]' : canWrite && !votePending ? 'hover:text-[#e84393] cursor-pointer' : 'text-[#444] cursor-not-allowed'}
+          >
+            +
+          </button>
+          <button
+            onClick={() => handleVote('downVote')}
+            disabled={!canWrite || votePending || castVote === -1}
+            title={castVote === -1 ? 'already downvoted' : 'downvote'}
+            className={castVote === -1 ? 'text-[#f2f5f4]' : canWrite && !votePending ? 'hover:text-[#f2f5f4] cursor-pointer' : 'text-[#444] cursor-not-allowed'}
+          >
+            -
+          </button>
           <span className={rating > 0 ? 'text-[#e84393]' : rating < 0 ? 'text-[#f2f5f4]' : ''}>{rating}</span>
           <EnsName address={owner} className="font-mono truncate max-w-[100px]" />
           <span>
@@ -121,16 +168,24 @@ export default function CommentItem({ commentId, depth }: CommentItemProps) {
               onChange={e => setNewComment(e.target.value)}
               placeholder="reply..."
             />
-            <button type="submit" className="mt-1 px-3 py-1 bg-[#e84393] text-white text-xs rounded hover:brightness-110">
-              Reply
+            <button type="submit" disabled={uploading || replyPending} className={`mt-1 px-3 py-1 bg-[#e84393] text-white text-xs rounded ${uploading || replyPending ? 'opacity-50 cursor-not-allowed' : 'hover:brightness-110'}`}>
+              {uploading || replyPending ? 'Posting...' : 'Reply'}
             </button>
           </form>
         )}
 
         {/* Nested comments */}
-        {subCommentIds.map((id: string) => (
-          <CommentItem commentId={id} key={id} depth={depth + 1} />
-        ))}
+        {depth >= MAX_DEPTH ? (
+          subCommentIds.length > 0 && (
+            <p className="text-xs text-[#888]">
+              {subCommentIds.length} deeper repl{subCommentIds.length === 1 ? 'y' : 'ies'} not shown
+            </p>
+          )
+        ) : (
+          subCommentIds.map((id: string) => (
+            <CommentItem commentId={id} key={id} depth={depth + 1} />
+          ))
+        )}
       </div>
     </div>
   )

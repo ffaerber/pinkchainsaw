@@ -295,21 +295,86 @@ contract PinkchainsawTest is Test {
         IERC20(BZZ).approve(address(board), type(uint256).max);
         board.upVote(threadIds[0]);
         assertEq(board.getSocialScore(carol), 1);
-        board.upVote(threadIds[0]);
-        assertEq(board.getSocialScore(carol), 2);
+        // flipping to a down vote moves the score by two
         board.downVote(threadIds[0]);
-        assertEq(board.getSocialScore(carol), 1);
-        board.downVote(threadIds[0]);
-        assertEq(board.getSocialScore(carol), 0);
+        assertEq(board.getSocialScore(carol), -1);
         vm.stopPrank();
 
         vm.startPrank(bob);
         IERC20(BZZ).approve(address(board), type(uint256).max);
         board.downVote(threadIds[0]);
-        assertEq(board.getSocialScore(carol), -1);
-        board.downVote(threadIds[0]);
         assertEq(board.getSocialScore(carol), -2);
         vm.stopPrank();
+    }
+
+    function test_cannotRepeatSameVote() public {
+        vm.startPrank(alice);
+        IERC20(BZZ).approve(address(board), type(uint256).max);
+        board.createThread(bytes32Strings[0], batchId);
+        vm.stopPrank();
+
+        bytes32 threadId = board.getPaginatedThreadIds(1, 1)[0];
+
+        vm.startPrank(bob);
+        IERC20(BZZ).approve(address(board), type(uint256).max);
+        board.upVote(threadId);
+
+        vm.expectRevert("already voted");
+        board.upVote(threadId);
+
+        board.downVote(threadId);
+
+        vm.expectRevert("already voted");
+        board.downVote(threadId);
+        vm.stopPrank();
+
+        // one voter can never move a rating by more than one in either direction
+        assertEq(board.getThread(threadId).rating, -1);
+        assertEq(board.getSocialScore(alice), -1);
+    }
+
+    function test_voteIsRecordedPerVoter() public {
+        vm.startPrank(alice);
+        IERC20(BZZ).approve(address(board), type(uint256).max);
+        board.createThread(bytes32Strings[0], batchId);
+        vm.stopPrank();
+
+        bytes32 threadId = board.getPaginatedThreadIds(1, 1)[0];
+
+        assertEq(board.getVote(threadId, bob), 0);
+
+        vm.startPrank(bob);
+        IERC20(BZZ).approve(address(board), type(uint256).max);
+        board.upVote(threadId);
+        vm.stopPrank();
+
+        assertEq(board.getVote(threadId, bob), 1);
+        assertEq(board.getVote(threadId, carol), 0);
+
+        vm.prank(bob);
+        board.downVote(threadId);
+
+        assertEq(board.getVote(threadId, bob), -1);
+    }
+
+    function test_flippingVoteChargesFeeAgain() public {
+        vm.startPrank(alice);
+        IERC20(BZZ).approve(address(board), type(uint256).max);
+        board.createThread(bytes32Strings[0], batchId);
+        vm.stopPrank();
+
+        bytes32 threadId = board.getPaginatedThreadIds(1, 1)[0];
+
+        vm.startPrank(bob);
+        IERC20(BZZ).approve(address(board), type(uint256).max);
+        board.upVote(threadId);
+
+        uint256 fee = board.getFee(bob);
+        uint256 bobBefore = IERC20(BZZ).balanceOf(bob);
+        board.downVote(threadId);
+        vm.stopPrank();
+
+        assertEq(bobBefore - IERC20(BZZ).balanceOf(bob), fee, "flipping a vote costs a fee");
     }
 
     function test_cannotSelfVote() public {
@@ -345,6 +410,120 @@ contract PinkchainsawTest is Test {
 
         bytes32[] memory page2 = board.getPaginatedThreadIds(2, 1);
         assertEq(page2.length, 0);
+    }
+
+    function test_paginationPageZeroReturnsEmpty() public {
+        vm.startPrank(alice);
+        IERC20(BZZ).approve(address(board), type(uint256).max);
+        board.createThread(bytes32Strings[0], batchId);
+        vm.stopPrank();
+
+        // page 0 used to revert with an arithmetic underflow
+        assertEq(board.getPaginatedThreadIds(0, 20).length, 0);
+        assertEq(board.getPaginatedThreadIds(1, 0).length, 0);
+    }
+
+    /// Posting the same text twice produces the same Swarm reference. Both comments must
+    /// survive as separate posts instead of the second overwriting the first.
+    function test_sameCommentBzzhashInTwoThreads() public {
+        vm.startPrank(alice);
+        IERC20(BZZ).approve(address(board), type(uint256).max);
+        board.createThread(bytes32Strings[0], batchId);
+        board.createThread(bytes32Strings[1], batchId);
+        vm.stopPrank();
+
+        bytes32[] memory threadIds = board.getPaginatedThreadIds(1, 2);
+
+        vm.startPrank(bob);
+        IERC20(BZZ).approve(address(board), type(uint256).max);
+        board.createComment(threadIds[0], bytes32Strings[9], batchId);
+        board.createComment(threadIds[1], bytes32Strings[9], batchId);
+        vm.stopPrank();
+
+        Pinkchainsaw.Post memory threadOne = board.getThread(threadIds[0]);
+        Pinkchainsaw.Post memory threadTwo = board.getThread(threadIds[1]);
+
+        assertEq(threadOne.commentIds.length, 1);
+        assertEq(threadTwo.commentIds.length, 1);
+        assertTrue(threadOne.commentIds[0] != threadTwo.commentIds[0], "comments must have distinct ids");
+
+        // each comment still points at the thread it was posted under
+        assertEq(board.getComment(threadOne.commentIds[0]).threadBzzhash, bytes32Strings[0]);
+        assertEq(board.getComment(threadTwo.commentIds[0]).threadBzzhash, bytes32Strings[1]);
+        assertEq(board.getCommentIdsByAddress(bob).length, 2);
+    }
+
+    function test_sameCommentBzzhashTwiceInOneThread() public {
+        vm.startPrank(alice);
+        IERC20(BZZ).approve(address(board), type(uint256).max);
+        board.createThread(bytes32Strings[0], batchId);
+        vm.stopPrank();
+
+        bytes32 threadId = board.getPaginatedThreadIds(1, 1)[0];
+
+        vm.startPrank(bob);
+        IERC20(BZZ).approve(address(board), type(uint256).max);
+        board.createComment(threadId, bytes32Strings[9], batchId);
+        board.createComment(threadId, bytes32Strings[9], batchId);
+        vm.stopPrank();
+
+        Pinkchainsaw.Post memory thread = board.getThread(threadId);
+        assertEq(thread.commentIds.length, 2);
+        assertTrue(thread.commentIds[0] != thread.commentIds[1], "comments must have distinct ids");
+        assertEq(board.getComment(thread.commentIds[0]).index, 0);
+        assertEq(board.getComment(thread.commentIds[1]).index, 1);
+    }
+
+    /// A comment whose bzzhash equals its author's own thread bzzhash used to overwrite that
+    /// thread, leaving a dead id in the thread list.
+    function test_commentCannotOverwriteOwnThread() public {
+        vm.startPrank(alice);
+        IERC20(BZZ).approve(address(board), type(uint256).max);
+        board.createThread(bytes32Strings[0], batchId);
+
+        bytes32 threadId = board.getPaginatedThreadIds(1, 1)[0];
+        board.createComment(threadId, bytes32Strings[0], batchId);
+        vm.stopPrank();
+
+        Pinkchainsaw.Post memory thread = board.getThread(threadId);
+        assertEq(thread.owner, alice);
+        assertEq(thread.bzzhash, bytes32Strings[0]);
+        assertEq(thread.index, 0);
+        assertEq(thread.commentIds.length, 1);
+        assertTrue(thread.commentIds[0] != threadId, "comment id must not equal the thread id");
+        assertEq(board.getTotalThreads(), 1);
+    }
+
+    function test_votesAndCommentsSurviveARepostedBzzhash() public {
+        vm.startPrank(alice);
+        IERC20(BZZ).approve(address(board), type(uint256).max);
+        board.createThread(bytes32Strings[0], batchId);
+        board.createThread(bytes32Strings[1], batchId);
+        vm.stopPrank();
+
+        bytes32[] memory threadIds = board.getPaginatedThreadIds(1, 2);
+
+        vm.startPrank(bob);
+        IERC20(BZZ).approve(address(board), type(uint256).max);
+        board.createComment(threadIds[0], bytes32Strings[9], batchId);
+        vm.stopPrank();
+
+        bytes32 firstCommentId = board.getThread(threadIds[0]).commentIds[0];
+
+        vm.startPrank(carol);
+        IERC20(BZZ).approve(address(board), type(uint256).max);
+        board.upVote(firstCommentId);
+        vm.stopPrank();
+
+        assertEq(board.getComment(firstCommentId).rating, 1);
+
+        // bob reposts the same text under the other thread
+        vm.prank(bob);
+        board.createComment(threadIds[1], bytes32Strings[9], batchId);
+
+        // the earlier comment keeps its rating
+        assertEq(board.getComment(firstCommentId).rating, 1);
+        assertEq(board.getSocialScore(bob), 1);
     }
 
     function test_getCommentsByAddress() public {
@@ -455,7 +634,8 @@ contract PinkchainsawTest is Test {
         assertEq(board.getSocialScore(alice), -1);
         assertEq(board.getFee(alice), board.bzzFee() * 4);
 
-        vm.prank(carol);
+        // a second, distinct voter is needed to push the score further down
+        vm.prank(bob);
         board.downVote(aliceThread);
 
         // alice score: -2 → multiplier 5
@@ -479,8 +659,11 @@ contract PinkchainsawTest is Test {
         // alice score: 1 → multiplier 2
         assertEq(board.getFee(alice), board.bzzFee() * 2);
 
-        vm.prank(bob);
+        // a second, distinct voter is needed to push the score further up
+        vm.startPrank(carol);
+        IERC20(BZZ).approve(address(board), type(uint256).max);
         board.upVote(threadIds[0]);
+        vm.stopPrank();
 
         // alice score: 2 → multiplier 1
         assertEq(board.getFee(alice), board.bzzFee() * 1);

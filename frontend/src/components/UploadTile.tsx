@@ -1,9 +1,10 @@
-import { useCallback, useEffect } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useDropzone } from 'react-dropzone'
 import { useAccount, useReadContract, useWriteContract, useWaitForTransactionReceipt } from 'wagmi'
 import toast from 'react-hot-toast'
 import { PINKCHAINSAW_ABI, PINKCHAINSAW_ADDRESS, BZZ_TOKEN_ADDRESS, ERC20_ABI } from '../config/contracts'
 import { useBeeContext } from '../hooks/BeeContext'
+import { txErrorMessage } from '../lib/errors'
 
 export default function UploadTile() {
   const { isConnected, address } = useAccount()
@@ -15,7 +16,10 @@ export default function UploadTile() {
   })
   const hasAllowance = bzzAllowance && (bzzAllowance as bigint) > 0n
 
-  const { writeContract, data: txHash } = useWriteContract()
+  const [uploading, setUploading] = useState(false)
+  const { writeContract, data: txHash, isPending } = useWriteContract({
+    mutation: { onError: (err) => toast.error(txErrorMessage(err)) },
+  })
   const { isSuccess } = useWaitForTransactionReceipt({ hash: txHash })
 
   useEffect(() => {
@@ -25,6 +29,7 @@ export default function UploadTile() {
   const onDrop = useCallback(async (acceptedFiles: File[]) => {
     const file = acceptedFiles[0]
     if (!file || !batchId) return
+    setUploading(true)
     try {
       toast('Uploading to Swarm...')
       const tag = await writer.createTag()
@@ -39,11 +44,14 @@ export default function UploadTile() {
         args: [`0x${reference}`, `0x${batchId}`],
       })
     } catch (e) {
-      toast.error(`Upload failed: ${e}`)
+      toast.error(`Upload failed: ${txErrorMessage(e)}`)
+    } finally {
+      setUploading(false)
     }
   }, [writer, batchId, writeContract])
 
-  const enabled = isConnected && !!batchId && !!hasAllowance
+  const busy = uploading || isPending
+  const enabled = isConnected && !!batchId && !!hasAllowance && !busy
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,

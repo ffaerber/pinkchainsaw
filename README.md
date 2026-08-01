@@ -8,7 +8,7 @@ Users post images, comment, and vote using xBZZ tokens. Fees from posts and comm
 
 ## Architecture
 
-- **Smart Contract**: Solidity 0.8.20, built with Foundry
+- **Smart Contract**: Solidity 0.8.28 (UUPS upgradeable), built with Foundry
 - **Frontend**: React 19 + TypeScript + Vite SPA (hash router for Swarm hosting)
 - **Chain**: Gnosis Chain (xDAI for gas, xBZZ for fees)
 - **Storage**: Ethereum Swarm (images + comment text)
@@ -24,6 +24,9 @@ Users post images, comment, and vote using xBZZ tokens. Fees from posts and comm
 | Upvote / Downvote | Sent to post owner |
 
 Fees are calculated based on social score: higher score = lower fees (1x-5x multiplier).
+
+Each address may cast one vote per post. A vote can be flipped from up to down or back, which
+costs another fee and moves the rating by two, but the same vote cannot be repeated.
 
 By routing post/comment fees into the Swarm PostageStamp contract, content stays alive on the network as long as users keep interacting.
 
@@ -58,7 +61,7 @@ If a local Bee node is connected, reads go through it (faster). Otherwise the pu
 
 | Contract | Address |
 |---|---|
-| Pinkchainsaw | `0xFe73D7bBA8A6228Aa3Aa4f955A1031eb0E83f90e` |
+| Pinkchainsaw (ERC1967 proxy) | `0x95cBdd7d64040C101240c93fc7B55EC6c2679368` |
 | BZZ Token (xBZZ) | `0xdBF3Ea6F5beE45c02255B2c26a16F300502F68da` |
 | PostageStamp (Swarm) | `0x45a1502382541Cd610CC9068e88727426b696293` |
 
@@ -88,7 +91,10 @@ make anvil
 # Terminal 2: fund wallets + deploy contract
 make anvil-init
 
-# Terminal 3: start frontend dev server
+# Terminal 3: point the frontend at the local deployment, then start the dev server
+cp frontend/.env.example frontend/.env   # set VITE_CONTRACT_ADDRESS to the address
+                                         # printed by anvil-init, VITE_RPC_URL to
+                                         # http://localhost:8545
 make dev
 ```
 
@@ -139,9 +145,9 @@ make anvil-init             # Fund wallets + deploy contract to local Anvil
 make dev                    # Start frontend dev server
 
 # Testing
-make test                   # Run unit tests
-make test-fork              # Run all tests against Gnosis Chain fork
-make test-unit              # Run only unit tests (no fork)
+make test                   # Run all tests (forks Gnosis Chain at the pinned block)
+make test-fork              # Same, with the fork url and block passed explicitly
+make test-unit              # Run only the Pinkchainsaw test contract (still forks)
 make test-gas               # Run tests with gas report
 make coverage               # Run test coverage
 
@@ -173,7 +179,7 @@ pinkchainsaw/
 ├── src/
 │   └── Pinkchainsaw.sol              # Main contract (threads, comments, votes, stamp top-up)
 ├── test/
-│   └── Pinkchainsaw.t.sol            # Fork tests against Gnosis Chain (20 tests)
+│   └── Pinkchainsaw.t.sol            # Fork tests against Gnosis Chain (33 tests)
 ├── frontend/
 │   ├── src/
 │   │   ├── components/               # Nav, ThreadList, ThreadTile, UploadTile,
@@ -191,7 +197,7 @@ pinkchainsaw/
 
 | Layer | Technology |
 |---|---|
-| Smart Contracts | Solidity 0.8.20, Foundry |
+| Smart Contracts | Solidity 0.8.28, Foundry |
 | Frontend | React 19, TypeScript, Vite, Tailwind CSS 4 |
 | Web3 | wagmi v2, viem |
 | Swarm SDK | @ethersphere/bee-js v11 |
