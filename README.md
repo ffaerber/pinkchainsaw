@@ -19,14 +19,26 @@ Users post images, comment, and vote using xBZZ tokens. Fees from posts and comm
 
 | Action | Fee destination |
 |---|---|
-| Create thread | Tops up poster's postage stamp |
-| Create comment | Tops up commenter's postage stamp |
+| Create thread | Tops up the poster's registered postage stamp |
+| Create comment | Tops up the commenter's registered postage stamp |
 | Upvote / Downvote | Sent to post owner |
 
 Fees are calculated based on social score: higher score = lower fees (1x-5x multiplier).
 
 Each address may cast one vote per post. A vote can be flipped from up to down or back, which
 costs another fee and moves the rating by two, but the same vote cannot be repeated.
+
+### Which stamp gets topped up
+
+Your first post registers the postage batch that funds your posts, and every later post pays into
+that same batch. Moving to a new batch, which a batch expiring eventually forces, is a separate
+`setBatchId` transaction.
+
+The binding exists because neither half of the obvious check is available on chain. The Swarm
+PostageStamp contract lets anyone top up any batch, and a batch is owned by your Bee node's
+address rather than by your wallet, so the contract cannot ask whether a batch is yours. Without
+the binding, a client could pass any batch id it liked and quietly route your fees into someone
+else's storage while your own batch ran down.
 
 By routing post/comment fees into the Swarm PostageStamp contract, content stays alive on the network as long as users keep interacting.
 
@@ -179,12 +191,12 @@ pinkchainsaw/
 ├── src/
 │   └── Pinkchainsaw.sol              # Main contract (threads, comments, votes, stamp top-up)
 ├── test/
-│   └── Pinkchainsaw.t.sol            # Fork tests against Gnosis Chain (33 tests)
+│   └── Pinkchainsaw.t.sol            # Fork tests against Gnosis Chain (38 tests)
 ├── frontend/
 │   ├── src/
 │   │   ├── components/               # Nav, ThreadList, ThreadTile, UploadTile,
 │   │   │                             # ThreadDetails, CommentItem, EnsName, Modal, ChainGuard
-│   │   ├── hooks/                    # useBee, BeeContext
+│   │   ├── hooks/                    # useBee, BeeContext, usePostingBatch
 │   │   ├── config/                   # wagmi, contract addresses + ABIs
 │   │   └── abi/                      # Contract ABI (from forge build)
 │   └── index.html

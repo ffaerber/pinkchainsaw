@@ -1,9 +1,10 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useAccount, useBalance, useConnect, useDisconnect, useReadContract, useWriteContract, useWaitForTransactionReceipt } from 'wagmi'
 import { maxUint256 } from 'viem'
 import toast from 'react-hot-toast'
-import { BZZ_TOKEN_ADDRESS, ERC20_ABI, PINKCHAINSAW_ADDRESS } from '../config/contracts'
+import { BZZ_TOKEN_ADDRESS, ERC20_ABI, PINKCHAINSAW_ABI, PINKCHAINSAW_ADDRESS } from '../config/contracts'
 import { useBeeContext } from '../hooks/BeeContext'
+import { usePostingBatch } from '../hooks/usePostingBatch'
 import { txErrorMessage } from '../lib/errors'
 
 interface ModalProps {
@@ -34,6 +35,8 @@ export default function Modal({ handleClose }: ModalProps) {
   })
   const hasAllowance = bzzAllowance && (bzzAllowance as bigint) > 0n
 
+  const { registeredBatchId, registeredBatchOnNode, refetchRegisteredBatch } = usePostingBatch()
+
   const { writeContract, data: approveTxHash } = useWriteContract({
     mutation: { onError: (err) => toast.error(txErrorMessage(err)) },
   })
@@ -42,6 +45,28 @@ export default function Modal({ handleClose }: ModalProps) {
   const handleApprove = () => {
     writeContract({ address: BZZ_TOKEN_ADDRESS, abi: ERC20_ABI, functionName: 'approve', args: [PINKCHAINSAW_ADDRESS, maxUint256] })
   }
+
+  // Posts can only pay into the batch registered on chain, so switching stamps takes a
+  // transaction rather than just a different local selection.
+  const { writeContract: writeBatch, data: batchTxHash, isPending: batchPending } = useWriteContract({
+    mutation: { onError: (err) => toast.error(txErrorMessage(err)) },
+  })
+  const { isSuccess: batchSuccess } = useWaitForTransactionReceipt({ hash: batchTxHash })
+
+  useEffect(() => {
+    if (batchSuccess) { toast.success('Stamp registered!'); refetchRegisteredBatch() }
+  }, [batchSuccess, refetchRegisteredBatch])
+
+  const handleRegisterBatch = (id: string) => {
+    writeBatch({
+      address: PINKCHAINSAW_ADDRESS,
+      abi: PINKCHAINSAW_ABI,
+      functionName: 'setBatchId',
+      args: [`0x${id}` as `0x${string}`],
+    })
+  }
+
+  const batchMismatch = !!registeredBatchId && !!batchId && batchId !== registeredBatchId
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90">
@@ -108,6 +133,29 @@ export default function Modal({ handleClose }: ModalProps) {
                         </option>
                       ))}
                     </select>
+
+                    {registeredBatchId ? (
+                      <p className="mt-1 text-xs text-[#888]">
+                        Posts pay into{' '}
+                        <span className="font-mono">{registeredBatchId.slice(0, 16)}...</span>
+                        {!registeredBatchOnNode && (
+                          <span className="text-yellow-500"> — not on this node, pick another stamp below</span>
+                        )}
+                      </p>
+                    ) : (
+                      <p className="mt-1 text-xs text-[#888]">Your first post registers this stamp on chain.</p>
+                    )}
+
+                    {batchMismatch && (
+                      <p className="mt-1 text-xs text-[#888]">
+                        <a
+                          onClick={() => !batchPending && handleRegisterBatch(batchId!)}
+                          className={batchPending ? 'text-[#444]' : 'text-[#e84393] underline cursor-pointer'}
+                        >
+                          {batchPending ? 'registering...' : 'pay into the selected stamp instead'}
+                        </a>
+                      </p>
+                    )}
                   </div>
                 </>
               ) : (

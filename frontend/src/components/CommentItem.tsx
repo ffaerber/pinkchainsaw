@@ -3,6 +3,7 @@ import { useAccount, useReadContract, useWatchContractEvent, useWriteContract, u
 import toast from 'react-hot-toast'
 import { PINKCHAINSAW_ABI, PINKCHAINSAW_ADDRESS, BZZ_TOKEN_ADDRESS, ERC20_ABI } from '../config/contracts'
 import { useBeeContext } from '../hooks/BeeContext'
+import { usePostingBatch } from '../hooks/usePostingBatch'
 import { txErrorMessage } from '../lib/errors'
 import EnsName from './EnsName'
 
@@ -17,7 +18,8 @@ interface CommentItemProps {
 
 export default function CommentItem({ commentId, depth }: CommentItemProps) {
   const { address } = useAccount()
-  const { reader, writer, batchId } = useBeeContext()
+  const { reader, writer } = useBeeContext()
+  const { postingBatchId: batchId, refetchRegisteredBatch } = usePostingBatch()
 
   const { data: bzzAllowance } = useReadContract({
     address: BZZ_TOKEN_ADDRESS, abi: ERC20_ABI, functionName: 'allowance',
@@ -93,8 +95,10 @@ export default function CommentItem({ commentId, depth }: CommentItemProps) {
   const { isSuccess: replySuccess } = useWaitForTransactionReceipt({ hash: replyTxHash })
 
   useEffect(() => {
-    if (replySuccess) { toast.success('Reply posted!'); setNewComment(''); setReplyOpen(false); refetch() }
-  }, [replySuccess, refetch])
+    if (replySuccess) {
+      toast.success('Reply posted!'); setNewComment(''); setReplyOpen(false); refetch(); refetchRegisteredBatch()
+    }
+  }, [replySuccess, refetch, refetchRegisteredBatch])
 
   const submitReply = async (e: React.FormEvent) => {
     e.preventDefault()

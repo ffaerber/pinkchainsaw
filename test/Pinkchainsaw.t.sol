@@ -412,6 +412,91 @@ contract PinkchainsawTest is Test {
         assertEq(page2.length, 0);
     }
 
+    function test_firstPostRegistersTheBatch() public {
+        assertEq(board.getBatchId(alice), bytes32(0));
+
+        vm.startPrank(alice);
+        IERC20(BZZ).approve(address(board), type(uint256).max);
+        board.createThread(bytes32Strings[0], batchId);
+        vm.stopPrank();
+
+        assertEq(board.getBatchId(alice), batchId);
+    }
+
+    /// A client cannot point an author's fees at a batch the author never chose.
+    function test_cannotPostWithAnUnregisteredBatch() public {
+        bytes32 otherBatch = keccak256("some other batch");
+
+        vm.startPrank(alice);
+        IERC20(BZZ).approve(address(board), type(uint256).max);
+        board.createThread(bytes32Strings[0], batchId);
+
+        vm.expectRevert("batch not registered to sender");
+        board.createThread(bytes32Strings[1], otherBatch);
+        vm.stopPrank();
+
+        bytes32 threadId = board.getPaginatedThreadIds(1, 1)[0];
+
+        vm.startPrank(bob);
+        IERC20(BZZ).approve(address(board), type(uint256).max);
+        board.createComment(threadId, bytes32Strings[2], batchId);
+
+        vm.expectRevert("batch not registered to sender");
+        board.createComment(threadId, bytes32Strings[3], otherBatch);
+        vm.stopPrank();
+    }
+
+    function test_setBatchIdRotatesTheBinding() public {
+        bytes32 otherBatch = keccak256("some other batch");
+
+        vm.startPrank(alice);
+        IERC20(BZZ).approve(address(board), type(uint256).max);
+        board.createThread(bytes32Strings[0], batchId);
+
+        board.setBatchId(otherBatch);
+        assertEq(board.getBatchId(alice), otherBatch);
+
+        // the previously registered batch is now the one that is rejected
+        vm.expectRevert("batch not registered to sender");
+        board.createThread(bytes32Strings[1], batchId);
+
+        // rotating back restores posting with it
+        board.setBatchId(batchId);
+        board.createThread(bytes32Strings[1], batchId);
+        vm.stopPrank();
+
+        assertEq(board.getTotalThreads(), 2);
+    }
+
+    function test_batchBindingIsPerAuthor() public {
+        vm.startPrank(alice);
+        IERC20(BZZ).approve(address(board), type(uint256).max);
+        board.createThread(bytes32Strings[0], batchId);
+        vm.stopPrank();
+
+        // alice's binding does not constrain bob, who has not posted yet
+        assertEq(board.getBatchId(bob), bytes32(0));
+
+        vm.startPrank(bob);
+        IERC20(BZZ).approve(address(board), type(uint256).max);
+        board.createThread(bytes32Strings[1], batchId);
+        vm.stopPrank();
+
+        assertEq(board.getBatchId(bob), batchId);
+    }
+
+    function test_cannotRegisterZeroBatch() public {
+        vm.startPrank(alice);
+        IERC20(BZZ).approve(address(board), type(uint256).max);
+
+        vm.expectRevert("batch id is zero");
+        board.setBatchId(bytes32(0));
+
+        vm.expectRevert("batch id is zero");
+        board.createThread(bytes32Strings[0], bytes32(0));
+        vm.stopPrank();
+    }
+
     function test_paginationPageZeroReturnsEmpty() public {
         vm.startPrank(alice);
         IERC20(BZZ).approve(address(board), type(uint256).max);

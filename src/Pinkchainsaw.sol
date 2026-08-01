@@ -34,6 +34,7 @@ contract Pinkchainsaw is Initializable, UUPSUpgradeable {
     // Appended after the original layout. New state must be added at the end so that
     // storage of the already deployed proxy stays valid across upgrades.
     mapping(bytes32 => mapping(address => int256)) private postToVoterToVote;
+    mapping(address => bytes32) private addressToBatchId;
 
     enum PostType {
         THREAD,
@@ -48,6 +49,7 @@ contract Pinkchainsaw is Initializable, UUPSUpgradeable {
     int256 private constant UP_VOTE = 1;
     int256 private constant DOWN_VOTE = -1;
 
+    event BatchRegistered(address indexed author, bytes32 batchId);
     event ThreadCreated(bytes32 id);
     event ThreadUpdated(bytes32 id);
     event CommentUpdated(bytes32 id);
@@ -83,7 +85,41 @@ contract Pinkchainsaw is Initializable, UUPSUpgradeable {
 
     function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
 
+    /// @notice The postage batch that funds this author's posts, or zero before their first post.
+    function getBatchId(address author) public view returns (bytes32) {
+        return addressToBatchId[author];
+    }
+
+    /// @notice Register the postage batch that funds your posts, replacing any earlier one. A
+    /// batch has a finite lifetime, so an author must be able to move to a new one.
+    /// @dev Rotating is deliberately its own transaction. Posting can only ever use the batch
+    /// registered here, so a client cannot quietly point an author's fees at a different batch
+    /// by changing an argument the author never sees.
+    function setBatchId(bytes32 _batchId) public {
+        require(_batchId != bytes32(0), "batch id is zero");
+        addressToBatchId[msg.sender] = _batchId;
+        emit BatchRegistered(msg.sender, _batchId);
+    }
+
+    /// @dev The first post registers the batch, every later post must reuse it. The PostageStamp
+    /// contract lets anyone top up any batch, and a batch is owned by the author's Bee node rather
+    /// than by their wallet, so ownership cannot be checked on chain. Binding the batch to the
+    /// author is what keeps fees pointed where the author put them.
+    function _bindBatch(bytes32 _batchId) internal {
+        require(_batchId != bytes32(0), "batch id is zero");
+
+        bytes32 registered = addressToBatchId[msg.sender];
+        if (registered == bytes32(0)) {
+            addressToBatchId[msg.sender] = _batchId;
+            emit BatchRegistered(msg.sender, _batchId);
+        } else {
+            require(registered == _batchId, "batch not registered to sender");
+        }
+    }
+
     function _topUpStamp(bytes32 _batchId, uint256 _totalAmount) internal {
+        _bindBatch(_batchId);
+
         (, uint8 depth,,,) = postageStamp.batches(_batchId);
         uint256 amountPerChunk = _totalAmount / (1 << depth);
         require(amountPerChunk > 0, "fee too small for batch depth");

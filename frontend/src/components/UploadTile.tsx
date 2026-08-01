@@ -4,11 +4,13 @@ import { useAccount, useReadContract, useWriteContract, useWaitForTransactionRec
 import toast from 'react-hot-toast'
 import { PINKCHAINSAW_ABI, PINKCHAINSAW_ADDRESS, BZZ_TOKEN_ADDRESS, ERC20_ABI } from '../config/contracts'
 import { useBeeContext } from '../hooks/BeeContext'
+import { usePostingBatch } from '../hooks/usePostingBatch'
 import { txErrorMessage } from '../lib/errors'
 
 export default function UploadTile() {
   const { isConnected, address } = useAccount()
-  const { writer, batchId } = useBeeContext()
+  const { writer } = useBeeContext()
+  const { postingBatchId: batchId, refetchRegisteredBatch } = usePostingBatch()
 
   const { data: bzzAllowance } = useReadContract({
     address: BZZ_TOKEN_ADDRESS, abi: ERC20_ABI, functionName: 'allowance',
@@ -23,8 +25,9 @@ export default function UploadTile() {
   const { isSuccess } = useWaitForTransactionReceipt({ hash: txHash })
 
   useEffect(() => {
-    if (isSuccess) toast.success('Thread created!')
-  }, [isSuccess])
+    // the first post registers the author's batch on chain
+    if (isSuccess) { toast.success('Thread created!'); refetchRegisteredBatch() }
+  }, [isSuccess, refetchRegisteredBatch])
 
   const onDrop = useCallback(async (acceptedFiles: File[]) => {
     const file = acceptedFiles[0]
