@@ -445,16 +445,19 @@ contract FeeRoutingTest is Test {
 
     /// Lowering the base fee must not leave a signup fee stranded above its cap.
     function test_bzzFeeCannotBeLoweredPastTheSignupFeeCap() public {
+        // read first: an external call inside the reverting call consumes the expectRevert
+        uint256 min = board.MIN_BZZ_FEE();
+
         board.setPinkchainsawWallet(makeAddr("pinkchainsaw wallet"));
         board.setSignupFee(board.bzzFee() * board.MAX_SIGNUP_FEE_MULTIPLE());
 
         vm.expectRevert("signup fee above new cap");
-        board.setBzzFee(board.MIN_BZZ_FEE());
+        board.setBzzFee(min);
 
         // lowering the signup fee first makes room
         board.setSignupFee(0);
-        board.setBzzFee(board.MIN_BZZ_FEE());
-        assertEq(board.bzzFee(), board.MIN_BZZ_FEE());
+        board.setBzzFee(min);
+        assertEq(board.bzzFee(), min);
     }
 
     function test_onlyOwnerCanChangeTheFees() public {
