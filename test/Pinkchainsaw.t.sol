@@ -149,18 +149,99 @@ contract PinkchainsawTest is Test {
         assertEq(subComment.bzzhash, bytes32Strings[2]);
     }
 
-    function test_getMultiplier() public view {
-        assertEq(board.getMultiplier(2), 1);
-        assertEq(board.getMultiplier(1), 2);
-        assertEq(board.getMultiplier(0), 3);
-        assertEq(board.getMultiplier(-1), 4);
-        assertEq(board.getMultiplier(-2), 5);
+    function test_multiplierIsNeutralForANewAuthor() public view {
+        assertEq(board.multiplierBpsFor(0, 0), 30000, "a new author sits midway between 1x and 5x");
     }
 
-    function test_getMultiplierBelowMinusTwo() public view {
-        assertEq(board.getMultiplier(-3), 5);
-        assertEq(board.getMultiplier(-10), 5);
-        assertEq(board.getMultiplier(-100), 5);
+    function test_multiplierClampsAtBothEnds() public view {
+        uint256 min = board.MIN_MULTIPLIER_BPS();
+        uint256 max = board.MAX_MULTIPLIER_BPS();
+
+        assertEq(board.multiplierBpsFor(10, 0), min, "ten clean upvotes reach the cheapest fee");
+        assertEq(board.multiplierBpsFor(1000, 0), min);
+        assertEq(board.multiplierBpsFor(0, 10), max, "ten downvotes reach the dearest fee");
+        assertEq(board.multiplierBpsFor(0, 100000), max, "and it never goes past it");
+    }
+
+    /// The old ladder put a brand new author on the dearest fee after two downvotes, with no way
+    /// back except posting at that fee.
+    function test_aFewDownvotesDoNotSlamANewAuthor() public view {
+        uint256 neutral = board.multiplierBpsFor(0, 0);
+        uint256 twoDown = board.multiplierBpsFor(0, 2);
+
+        assertGt(twoDown, neutral, "two downvotes still cost the author something");
+        assertLt(twoDown, board.MAX_MULTIPLIER_BPS(), "but nowhere near the ceiling");
+        assertLt(twoDown - neutral, board.MAX_MULTIPLIER_BPS() - twoDown, "it stays nearer neutral");
+    }
+
+    /// What earned standing is for: the same five downvotes barely touch an established author.
+    function test_earnedStandingAbsorbsDownvotes() public view {
+        assertEq(board.multiplierBpsFor(1000, 5), board.MIN_MULTIPLIER_BPS(), "veteran unaffected");
+        assertGt(board.multiplierBpsFor(0, 5), board.multiplierBpsFor(1000, 5));
+    }
+
+    /// Volume alone must not buy a cheap fee. On the old net score an author with 1000 upvotes and
+    /// 995 downvotes scored +5 and paid the cheapest rate, despite half their content being
+    /// rejected. The ratio prices them near neutral instead.
+    function test_volumeDoesNotRescueABadRatio() public view {
+        uint256 mixed = board.multiplierBpsFor(1000, 995);
+
+        assertGt(mixed, board.MIN_MULTIPLIER_BPS(), "a 50% record is not the cheapest fee");
+        assertApproxEqAbs(mixed, 30000, 200, "it lands close to neutral");
+    }
+
+    function test_multiplierIsMonotonic() public view {
+        for (uint256 i = 0; i < 20; i++) {
+            assertGe(
+                board.multiplierBpsFor(3, i + 1), board.multiplierBpsFor(3, i), "downvotes never cheapen"
+            );
+            assertLe(board.multiplierBpsFor(i + 1, 3), board.multiplierBpsFor(i, 3), "upvotes never cost more");
+        }
+    }
+
+    function test_downVotesRaiseThePostingFee() public {
+        vm.startPrank(alice);
+        IERC20(BZZ).approve(address(board), type(uint256).max);
+        board.createThread(bytes32Strings[0], batchId);
+        vm.stopPrank();
+
+        uint256 feeBefore = board.getFee(alice);
+        bytes32 threadId = board.getPaginatedThreadIds(1, 1)[0];
+
+        vm.startPrank(bob);
+        IERC20(BZZ).approve(address(board), type(uint256).max);
+        board.downVote(threadId);
+        vm.stopPrank();
+
+        assertGt(board.getFee(alice), feeBefore, "a downvote makes posting dearer");
+        (uint256 up, uint256 down) = board.getVoteCounts(alice);
+        assertEq(up, 0);
+        assertEq(down, 1);
+    }
+
+    function test_voteCountsFollowAFlip() public {
+        vm.startPrank(alice);
+        IERC20(BZZ).approve(address(board), type(uint256).max);
+        board.createThread(bytes32Strings[0], batchId);
+        vm.stopPrank();
+
+        bytes32 threadId = board.getPaginatedThreadIds(1, 1)[0];
+
+        vm.startPrank(bob);
+        IERC20(BZZ).approve(address(board), type(uint256).max);
+        board.upVote(threadId);
+
+        (uint256 up, uint256 down) = board.getVoteCounts(alice);
+        assertEq(up, 1);
+        assertEq(down, 0);
+
+        // flipping retracts the upvote rather than counting both
+        board.downVote(threadId);
+        vm.stopPrank();
+
+        (up, down) = board.getVoteCounts(alice);
+        assertEq(up, 0, "the upvote is retracted");
+        assertEq(down, 1);
     }
 
     function test_feeGoesToStampTopUp() public {
@@ -712,17 +793,21 @@ contract PinkchainsawTest is Test {
         board.downVote(aliceThread);
         vm.stopPrank();
 
-        // alice score: -1 → multiplier 4
         assertEq(board.getSocialScore(alice), -1);
-        assertEq(board.getFee(alice), board.bzzFee() * 4);
+        uint256 feeAfterOne = board.getFee(alice);
+        assertGt(feeAfterOne, board.bzzFee() * 3, "one downvote makes posting dearer");
 
         // a second, distinct voter is needed to push the score further down
         vm.prank(bob);
         board.downVote(aliceThread);
 
-        // alice score: -2 → multiplier 5
         assertEq(board.getSocialScore(alice), -2);
-        assertEq(board.getFee(alice), board.bzzFee() * 5);
+        assertGt(board.getFee(alice), feeAfterOne, "and a second dearer still");
+        assertLt(
+            board.getFee(alice),
+            board.bzzFee() * board.MAX_MULTIPLIER_BPS() / 10000,
+            "two downvotes must not reach the ceiling"
+        );
     }
 
     function test_feeScalesWithPositiveSocialScore() public {
@@ -738,8 +823,9 @@ contract PinkchainsawTest is Test {
         board.upVote(threadIds[0]);
         vm.stopPrank();
 
-        // alice score: 1 → multiplier 2
-        assertEq(board.getFee(alice), board.bzzFee() * 2);
+        uint256 neutralFee = board.bzzFee() * 3;
+        uint256 feeAfterOne = board.getFee(alice);
+        assertLt(feeAfterOne, neutralFee, "one upvote makes posting cheaper");
 
         // a second, distinct voter is needed to push the score further up
         vm.startPrank(carol);
@@ -747,8 +833,12 @@ contract PinkchainsawTest is Test {
         board.upVote(threadIds[0]);
         vm.stopPrank();
 
-        // alice score: 2 → multiplier 1
-        assertEq(board.getFee(alice), board.bzzFee() * 1);
+        assertLt(board.getFee(alice), feeAfterOne, "and a second cheaper still");
+        assertGt(
+            board.getFee(alice),
+            board.bzzFee() * board.MIN_MULTIPLIER_BPS() / 10000,
+            "but the cheapest rate has to be earned over more than two votes"
+        );
     }
 
     function test_voteFailsWithoutApproval() public {

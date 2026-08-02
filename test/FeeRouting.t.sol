@@ -177,7 +177,7 @@ contract FeeRoutingTest is Test {
         board.downVote(bobThread);
 
         assertEq(board.getSocialScore(bob), -2);
-        assertEq(board.getFee(bob), board.bzzFee() * 5, "posting is dearer for bob");
+        assertGt(board.getFee(bob), board.bzzFee() * 3, "posting is dearer for bob");
         assertEq(board.getVoteFee(), board.bzzFee(), "but voting is not");
 
         uint256 bobBefore = bzz.balanceOf(bob);

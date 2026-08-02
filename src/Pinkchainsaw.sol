@@ -41,6 +41,12 @@ contract Pinkchainsaw is Initializable, UUPSUpgradeable {
     bytes32 private pinkchainsawBatchId;
     uint256 private projectBps;
 
+    // Upvotes and downvotes received are tallied separately, because the fee multiplier reads a
+    // ratio rather than the net score. The net score on its own cannot tell one downvote on a new
+    // author from one downvote on an author with a thousand upvotes.
+    mapping(address => uint256) private addressToUpVotes;
+    mapping(address => uint256) private addressToDownVotes;
+
     enum PostType {
         THREAD,
         COMMENT
@@ -57,6 +63,20 @@ contract Pinkchainsaw is Initializable, UUPSUpgradeable {
     uint256 private constant BPS_DENOMINATOR = 10000;
     /// @notice Ceiling on the project's share, so it can never be raised to swallow a whole fee.
     uint256 public constant MAX_PROJECT_BPS = 2000;
+
+    /// @notice Cheapest and dearest posting multipliers, as basis points of bzzFee: 1x and 5x.
+    uint256 public constant MIN_MULTIPLIER_BPS = 10000;
+    uint256 public constant MAX_MULTIPLIER_BPS = 50000;
+
+    /// @dev Votes are smoothed by a prior of this many imaginary votes each way, so that an author
+    /// with almost no votes sits near neutral instead of at an extreme. Without it two downvotes
+    /// put a brand new author on the dearest fee, and the only way out is to post at that fee.
+    uint256 private constant VOTE_PRIOR = 5;
+
+    /// @dev The approval ratios at which the multiplier bottoms out and tops out. Between them it
+    /// moves continuously, so standing keeps mattering instead of saturating after two votes.
+    uint256 private constant RATIO_FLOOR_BPS = 2500;
+    uint256 private constant RATIO_CEIL_BPS = 7500;
 
     event BatchRegistered(address indexed author, bytes32 batchId);
     event PinkchainsawBatchUpdated(bytes32 batchId);
@@ -416,6 +436,18 @@ contract Pinkchainsaw is Initializable, UUPSUpgradeable {
         require(previousVote != _direction, "already voted");
         postToVoterToVote[_id][msg.sender] = _direction;
 
+        // keep the tallies the fee multiplier reads in step, retracting a flipped vote first
+        if (previousVote == UP_VOTE) {
+            addressToUpVotes[post.owner] -= 1;
+        } else if (previousVote == DOWN_VOTE) {
+            addressToDownVotes[post.owner] -= 1;
+        }
+        if (_direction == UP_VOTE) {
+            addressToUpVotes[post.owner] += 1;
+        } else {
+            addressToDownVotes[post.owner] += 1;
+        }
+
         int256 delta = _direction - previousVote;
         post.rating += delta;
         addressToSocialScore[post.owner] += delta;
@@ -436,25 +468,42 @@ contract Pinkchainsaw is Initializable, UUPSUpgradeable {
         return addressToSocialScore[addr];
     }
 
-    function getFee(address addr) public view returns (uint256 fee) {
-        int256 socialScore = addressToSocialScore[addr];
-        uint256 multiplier = getMultiplier(socialScore);
-        return bzzFee * multiplier;
+    /// @notice Upvotes and downvotes an author has received across all of their posts.
+    function getVoteCounts(address addr) public view returns (uint256 upVotes, uint256 downVotes) {
+        return (addressToUpVotes[addr], addressToDownVotes[addr]);
     }
 
-    function getMultiplier(int256 socialScore) public pure returns (uint256) {
-        if (socialScore >= 2) {
-            return 1;
-        }
-        if (socialScore >= 1) {
-            return 2;
-        }
-        if (socialScore >= 0) {
-            return 3;
-        }
-        if (socialScore >= -1) {
-            return 4;
-        }
-        return 5;
+    /// @notice What this author pays to post, scaled by how their content has been received.
+    function getFee(address addr) public view returns (uint256 fee) {
+        return (bzzFee * getMultiplierBps(addr)) / BPS_DENOMINATOR;
     }
+
+    function getMultiplierBps(address addr) public view returns (uint256) {
+        return multiplierBpsFor(addressToUpVotes[addr], addressToDownVotes[addr]);
+    }
+
+    /// @notice The posting fee multiplier in basis points, from a smoothed approval ratio.
+    ///
+    /// @dev Two properties the plain net score did not have. Standing is proportional: an author
+    /// with a thousand upvotes needs hundreds of downvotes to move off the cheapest fee, while the
+    /// old ladder saturated two votes either side of zero, so a veteran and a newcomer were treated
+    /// identically. And a handful of votes cannot swing the fee to an extreme, because the prior
+    /// keeps a barely voted author near neutral, which is what stops two strangers pricing a
+    /// newcomer off the board on their first day.
+    function multiplierBpsFor(uint256 upVotes, uint256 downVotes) public pure returns (uint256) {
+        uint256 ratioBps =
+            ((upVotes + VOTE_PRIOR) * BPS_DENOMINATOR) / (upVotes + downVotes + 2 * VOTE_PRIOR);
+
+        if (ratioBps <= RATIO_FLOOR_BPS) {
+            return MAX_MULTIPLIER_BPS;
+        }
+        if (ratioBps >= RATIO_CEIL_BPS) {
+            return MIN_MULTIPLIER_BPS;
+        }
+
+        uint256 span = MAX_MULTIPLIER_BPS - MIN_MULTIPLIER_BPS;
+        uint256 progress = ratioBps - RATIO_FLOOR_BPS;
+        return MAX_MULTIPLIER_BPS - (span * progress) / (RATIO_CEIL_BPS - RATIO_FLOOR_BPS);
+    }
+
 }

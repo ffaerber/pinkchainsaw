@@ -4,7 +4,7 @@
 
 A decentralized imageboard on Gnosis Chain with Ethereum Swarm storage.
 
-Users post images, comment, and vote using xBZZ tokens. Every fee tops up the Swarm postage batch of the content being replied to or voted on, so engagement is what keeps a post alive — and a post outlives its author for as long as people keep interacting with it. A social score system rewards good content with lower posting fees and penalizes bad content with higher ones. Anyone can browse all content via a public Swarm gateway without a wallet.
+Users post images, comment, and vote using xBZZ tokens. Every fee tops up the Swarm postage batch of the content being replied to or voted on, so engagement is what keeps a post alive — and a post outlives its author for as long as people keep interacting with it. A reputation system rewards well received content with lower posting fees and penalizes badly received content with higher ones. Anyone can browse all content via a public Swarm gateway without a wallet.
 
 ## Architecture
 
@@ -23,16 +23,48 @@ author for as long as people keep interacting with it.
 
 | Action | Fee | Tops up |
 |---|---|---|
-| Create thread | scaled by social score | the Pink Chainsaw batch, which hosts the frontend |
-| Comment or reply | scaled by social score | the batch of the post being replied to |
-| Reply to yourself | scaled by social score | the Pink Chainsaw batch |
+| Create thread | scaled by reputation | the Pink Chainsaw batch, which hosts the frontend |
+| Comment or reply | scaled by reputation | the batch of the post being replied to |
+| Reply to yourself | scaled by reputation | the Pink Chainsaw batch |
 | Upvote / downvote | flat, same for everyone | the batch of the post being voted on |
 
 A share of every fee (10% by default, capped at 20%) goes to the Pink Chainsaw batch, so the
 frontend keeps paying for its own hosting.
 
-Posting fees scale with social score: higher score = lower fee (1x-5x multiplier). Voting is a flat
-price for everyone, so a well reputed account cannot vote, or grief, more cheaply than a new one.
+Voting is a flat price for everyone, so a well reputed account cannot vote, or grief, more cheaply
+than a new one. Posting scales with how an author's content has been received, between 1x and 5x of
+the base fee.
+
+### How the posting multiplier is calculated
+
+The multiplier comes from the **ratio** of upvotes to total votes an author has received, not from
+the net score, and the ratio is smoothed by a prior of five imaginary votes each way:
+
+```
+ratio = (upvotes + 5) / (upvotes + downvotes + 10)
+```
+
+A ratio of 25% or worse pays 5x, 75% or better pays 1x, and it moves continuously in between.
+
+| Author | Ratio | Multiplier |
+|---|---|---|
+| brand new | 50% | 3.00x |
+| 2 downvotes, no upvotes | 42% | 3.67x |
+| 10 downvotes, no upvotes | 25% | 5.00x |
+| 10 upvotes, no downvotes | 75% | 1.00x |
+| 1000 upvotes, 5 downvotes | 99% | 1.00x |
+| 1000 upvotes, 995 downvotes | 50% | 3.00x |
+
+Two things this gets right that a net score cannot. **Standing is proportional**: five downvotes are
+nothing to an author with a thousand upvotes, but meaningful for someone with none — and an
+established author needs hundreds of downvotes, not two, before their fee moves at all. **A newcomer
+cannot be priced off the board**: the prior keeps a barely voted author near neutral, so two
+strangers can no longer put someone on the dearest fee on their first day, which under a net score
+they could — and the only way back was to post at that fee.
+
+It also means volume alone buys nothing. An author with 1000 upvotes and 995 downvotes scored +5 on
+the old net score and paid the cheapest rate despite half their content being rejected; on the ratio
+they pay the neutral rate.
 
 Two consequences worth stating plainly. A downvote costs the voter but is never income for its
 target — it buys them storage time, nothing spendable — so inflammatory content cannot be farmed for
@@ -80,7 +112,7 @@ If a local Bee node is connected, reads go through it (faster). Otherwise the pu
 - Create image threads (uploaded to Swarm, referenced on-chain)
 - Nested comments with threaded replies
 - Upvote / downvote with a flat xBZZ fee
-- Social score system (higher score = lower posting fees)
+- Reputation system: posting fees scale with an author's smoothed approval ratio
 - Fees top up the postage stamp of the content being engaged with, so popular content stays alive
 - ENS name resolution for addresses
 - Live updates via contract event watching (no page reload needed)
@@ -216,7 +248,7 @@ pinkchainsaw/
 ├── src/
 │   └── Pinkchainsaw.sol              # Main contract (threads, comments, votes, stamp top-up)
 ├── test/
-│   ├── Pinkchainsaw.t.sol            # Fork tests against Gnosis Chain (51 tests across two suites)
+│   ├── Pinkchainsaw.t.sol            # Fork tests against Gnosis Chain (57 tests across two suites)
 │   ├── FeeRouting.t.sol              # Fee destinations and fallbacks, against mocks
 │   └── mocks/Mocks.sol               # Mock BZZ + PostageStamp
 ├── frontend/

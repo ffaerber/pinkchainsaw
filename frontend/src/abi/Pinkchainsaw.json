@@ -6,7 +6,33 @@
   },
   {
     "type": "function",
+    "name": "MAX_MULTIPLIER_BPS",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "MAX_PROJECT_BPS",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "MIN_MULTIPLIER_BPS",
     "inputs": [],
     "outputs": [
       {
@@ -292,12 +318,12 @@
   },
   {
     "type": "function",
-    "name": "getMultiplier",
+    "name": "getMultiplierBps",
     "inputs": [
       {
-        "name": "socialScore",
-        "type": "int256",
-        "internalType": "int256"
+        "name": "addr",
+        "type": "address",
+        "internalType": "address"
       }
     ],
     "outputs": [
@@ -307,7 +333,7 @@
         "internalType": "uint256"
       }
     ],
-    "stateMutability": "pure"
+    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -507,6 +533,30 @@
   },
   {
     "type": "function",
+    "name": "getVoteCounts",
+    "inputs": [
+      {
+        "name": "addr",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "upVotes",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "downVotes",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "getVoteFee",
     "inputs": [],
     "outputs": [
@@ -535,6 +585,30 @@
     ],
     "outputs": [],
     "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "multiplierBpsFor",
+    "inputs": [
+      {
+        "name": "upVotes",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "downVotes",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "pure"
   },
   {
     "type": "function",
