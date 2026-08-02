@@ -36,6 +36,11 @@ contract PinkchainsawTest is Test {
         // Use a known active batch (from the Makefile/env)
         batchId = 0xd6a860cbd104d026c48e947dc896a367347de6677d11ac003dea0a61ed5b69bf;
 
+        // Only one usable batch exists on the fork, so it stands in for both the project batch and
+        // every author's batch. That means these tests verify amounts against the real PostageStamp
+        // but cannot tell fee destinations apart. FeeRouting.t.sol covers routing, against mocks.
+        board.setPinkchainsawBatchId(batchId);
+
         for (uint256 i = 0; i < 210; i++) {
             bytes32Strings.push(bytes32(i));
         }
@@ -222,7 +227,7 @@ contract PinkchainsawTest is Test {
         assertEq(remainingAfter - remainingBefore, expectedPerChunk * 3, "3 posts should top up 3x");
     }
 
-    function test_commentTopsUpCommenterStamp() public {
+    function test_commentTopsUpTheParentOwnerStamp() public {
         vm.startPrank(alice);
         IERC20(BZZ).approve(address(board), type(uint256).max);
         board.createThread(bytes32Strings[0], batchId);
@@ -242,7 +247,7 @@ contract PinkchainsawTest is Test {
         assertTrue(remainingAfter > remainingBefore, "comment should top up the stamp");
     }
 
-    function test_voteDoesNotTopUpStamp() public {
+    function test_voteTopsUpStamp() public {
         vm.startPrank(alice);
         IERC20(BZZ).approve(address(board), type(uint256).max);
         board.createThread(bytes32Strings[0], batchId);
@@ -259,10 +264,10 @@ contract PinkchainsawTest is Test {
 
         (,,,, uint256 remainingAfter) = IPostageStamp(POSTAGE_STAMP).batches(batchId);
 
-        assertEq(remainingAfter, remainingBefore, "votes should not top up stamp");
+        assertTrue(remainingAfter > remainingBefore, "a vote buys the post storage time");
     }
 
-    function test_voteSendsFeeToPostOwner() public {
+    function test_voteIsNotIncomeForThePostOwner() public {
         vm.startPrank(alice);
         IERC20(BZZ).approve(address(board), type(uint256).max);
         board.createThread(bytes32Strings[0], batchId);
@@ -270,15 +275,15 @@ contract PinkchainsawTest is Test {
 
         bytes32[] memory threadIds = board.getPaginatedThreadIds(1, 1);
 
+        uint256 aliceBefore = IERC20(BZZ).balanceOf(alice);
+
         vm.startPrank(bob);
         IERC20(BZZ).approve(address(board), type(uint256).max);
-
-        uint256 aliceBefore = IERC20(BZZ).balanceOf(alice);
         board.upVote(threadIds[0]);
+        board.downVote(threadIds[0]);
         vm.stopPrank();
 
-        uint256 aliceAfter = IERC20(BZZ).balanceOf(alice);
-        assertTrue(aliceAfter > aliceBefore, "alice should have received vote fee");
+        assertEq(IERC20(BZZ).balanceOf(alice), aliceBefore, "votes never pay the post owner in tokens");
     }
 
     function test_getSocialScore() public {
@@ -369,7 +374,7 @@ contract PinkchainsawTest is Test {
         IERC20(BZZ).approve(address(board), type(uint256).max);
         board.upVote(threadId);
 
-        uint256 fee = board.getFee(bob);
+        uint256 fee = board.getVoteFee();
         uint256 bobBefore = IERC20(BZZ).balanceOf(bob);
         board.downVote(threadId);
         vm.stopPrank();
@@ -649,7 +654,7 @@ contract PinkchainsawTest is Test {
         _assertContains(thread.commentIds, aliceCommentIds[0]);
     }
 
-    function test_upVoteTransfersExactFee() public {
+    function test_voterSpendsExactlyTheFlatVoteFee() public {
         vm.startPrank(alice);
         IERC20(BZZ).approve(address(board), type(uint256).max);
         board.createThread(bytes32Strings[0], batchId);
@@ -657,38 +662,20 @@ contract PinkchainsawTest is Test {
 
         bytes32[] memory threadIds = board.getPaginatedThreadIds(1, 1);
 
-        uint256 fee = board.getFee(bob);
-        uint256 aliceBefore = IERC20(BZZ).balanceOf(alice);
-        uint256 bobBefore = IERC20(BZZ).balanceOf(bob);
+        uint256 fee = board.getVoteFee();
+        assertEq(fee, board.bzzFee(), "the vote fee carries no social score multiplier");
 
         vm.startPrank(bob);
         IERC20(BZZ).approve(address(board), type(uint256).max);
+
+        uint256 bobBefore = IERC20(BZZ).balanceOf(bob);
         board.upVote(threadIds[0]);
-        vm.stopPrank();
+        assertEq(bobBefore - IERC20(BZZ).balanceOf(bob), fee, "bob spends exactly the vote fee");
 
-        assertEq(IERC20(BZZ).balanceOf(alice) - aliceBefore, fee, "alice should receive exactly fee");
-        assertEq(bobBefore - IERC20(BZZ).balanceOf(bob), fee, "bob should spend exactly fee");
-    }
-
-    function test_downVoteTransfersExactFeeToOwner() public {
-        vm.startPrank(alice);
-        IERC20(BZZ).approve(address(board), type(uint256).max);
-        board.createThread(bytes32Strings[0], batchId);
-        vm.stopPrank();
-
-        bytes32[] memory threadIds = board.getPaginatedThreadIds(1, 1);
-
-        uint256 fee = board.getFee(bob);
-        uint256 aliceBefore = IERC20(BZZ).balanceOf(alice);
-        uint256 bobBefore = IERC20(BZZ).balanceOf(bob);
-
-        vm.startPrank(bob);
-        IERC20(BZZ).approve(address(board), type(uint256).max);
+        bobBefore = IERC20(BZZ).balanceOf(bob);
         board.downVote(threadIds[0]);
+        assertEq(bobBefore - IERC20(BZZ).balanceOf(bob), fee, "and the same again to flip it");
         vm.stopPrank();
-
-        assertEq(IERC20(BZZ).balanceOf(alice) - aliceBefore, fee, "alice should receive exactly fee on downvote");
-        assertEq(bobBefore - IERC20(BZZ).balanceOf(bob), fee, "bob should spend exactly fee on downvote");
     }
 
     function test_feeScalesWithNegativeSocialScore() public {

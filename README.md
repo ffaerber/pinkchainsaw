@@ -4,7 +4,7 @@
 
 A decentralized imageboard on Gnosis Chain with Ethereum Swarm storage.
 
-Users post images, comment, and vote using xBZZ tokens. Fees from posts and comments automatically top up the poster's Swarm postage stamp, keeping content alive on the network. A social score system rewards good content with lower fees and penalizes bad content with higher fees. Anyone can browse all content via a public Swarm gateway without a wallet.
+Users post images, comment, and vote using xBZZ tokens. Every fee tops up the Swarm postage batch of the content being replied to or voted on, so engagement is what keeps a post alive — and a post outlives its author for as long as people keep interacting with it. A social score system rewards good content with lower posting fees and penalizes bad content with higher ones. Anyone can browse all content via a public Swarm gateway without a wallet.
 
 ## Architecture
 
@@ -17,30 +17,47 @@ Users post images, comment, and vote using xBZZ tokens. Fees from posts and comm
 
 ## How Fees Work
 
-| Action | Fee destination |
-|---|---|
-| Create thread | Tops up the poster's registered postage stamp |
-| Create comment | Tops up the commenter's registered postage stamp |
-| Upvote / Downvote | Sent to post owner |
+Every fee is paid in xBZZ and lands in a Swarm postage batch — never in anyone's wallet. The rule is
+that **engagement funds the storage of the content being engaged with**, so a post outlives its
+author for as long as people keep interacting with it.
 
-Fees are calculated based on social score: higher score = lower fees (1x-5x multiplier).
+| Action | Fee | Tops up |
+|---|---|---|
+| Create thread | scaled by social score | the Pink Chainsaw batch, which hosts the frontend |
+| Comment or reply | scaled by social score | the batch of the post being replied to |
+| Reply to yourself | scaled by social score | the Pink Chainsaw batch |
+| Upvote / downvote | flat, same for everyone | the batch of the post being voted on |
+
+A share of every fee (10% by default, capped at 20%) goes to the Pink Chainsaw batch, so the
+frontend keeps paying for its own hosting.
+
+Posting fees scale with social score: higher score = lower fee (1x-5x multiplier). Voting is a flat
+price for everyone, so a well reputed account cannot vote, or grief, more cheaply than a new one.
+
+Two consequences worth stating plainly. A downvote costs the voter but is never income for its
+target — it buys them storage time, nothing spendable — so inflammatory content cannot be farmed for
+profit. And content nobody engages with is not topped up by anyone, so it eventually expires, which
+is the intended outcome rather than a failure.
+
+A fee never blocks the interaction it belongs to. If the batch a fee was meant for has expired, does
+not exist, or is too deep for the amount to survive rounding, that share goes to the Pink Chainsaw
+batch instead, and anything that still cannot be placed is returned to the payer. An author who
+disappears can never make their own thread uncommentable.
 
 Each address may cast one vote per post. A vote can be flipped from up to down or back, which
 costs another fee and moves the rating by two, but the same vote cannot be repeated.
 
-### Which stamp gets topped up
+### Registering your batch
 
-Your first post registers the postage batch that funds your posts, and every later post pays into
-that same batch. Moving to a new batch, which a batch expiring eventually forces, is a separate
-`setBatchId` transaction.
+Your first post registers the postage batch that holds your content, and it stays bound to you until
+you rotate it with `setBatchId`. That registry is what lets other people's fees find your batch when
+they reply to or vote on your posts.
 
-The binding exists because neither half of the obvious check is available on chain. The Swarm
-PostageStamp contract lets anyone top up any batch, and a batch is owned by your Bee node's
-address rather than by your wallet, so the contract cannot ask whether a batch is yours. Without
-the binding, a client could pass any batch id it liked and quietly route your fees into someone
-else's storage while your own batch ran down.
-
-By routing post/comment fees into the Swarm PostageStamp contract, content stays alive on the network as long as users keep interacting.
+The binding is needed because neither half of the obvious ownership check exists on chain. The Swarm
+PostageStamp contract lets anyone top up any batch — which is exactly what makes this design possible
+— and a batch is owned by your Bee node's address rather than by your wallet, so the contract cannot
+ask whether a batch is yours. Without the binding, a client could pass any batch id it liked and
+quietly point other people's fees at storage you don't own.
 
 ## Read vs Write
 
@@ -62,9 +79,9 @@ If a local Bee node is connected, reads go through it (faster). Otherwise the pu
 - Auto chain-switch prompt to Gnosis Chain
 - Create image threads (uploaded to Swarm, referenced on-chain)
 - Nested comments with threaded replies
-- Upvote / downvote with xBZZ token fees
-- Social score system (higher score = lower fees)
-- Automatic postage stamp top-up from fees
+- Upvote / downvote with a flat xBZZ fee
+- Social score system (higher score = lower posting fees)
+- Fees top up the postage stamp of the content being engaged with, so popular content stays alive
 - ENS name resolution for addresses
 - Live updates via contract event watching (no page reload needed)
 - Dark UI with dense tile grid and pink accent
@@ -117,6 +134,14 @@ make dev
 ```bash
 make deploy-contract        # Deploy to Gnosis Chain (uses .env MNEMONIC)
 make verify-contract CONTRACT=0x...  # Verify on Blockscout
+```
+
+After deploying — or after upgrading an existing proxy, where the new storage starts empty — the
+owner has to register the project batch, otherwise fees have nowhere to go and posting is free:
+
+```bash
+cast send <proxy> "setPinkchainsawBatchId(bytes32)" 0x<batch-id> --rpc-url $RPC_URL --mnemonic "$MNEMONIC"
+cast send <proxy> "setProjectBps(uint256)" 1000 --rpc-url $RPC_URL --mnemonic "$MNEMONIC"   # upgrades only
 ```
 
 ### Frontend
@@ -191,7 +216,9 @@ pinkchainsaw/
 ├── src/
 │   └── Pinkchainsaw.sol              # Main contract (threads, comments, votes, stamp top-up)
 ├── test/
-│   └── Pinkchainsaw.t.sol            # Fork tests against Gnosis Chain (38 tests)
+│   ├── Pinkchainsaw.t.sol            # Fork tests against Gnosis Chain (51 tests across two suites)
+│   ├── FeeRouting.t.sol              # Fee destinations and fallbacks, against mocks
+│   └── mocks/Mocks.sol               # Mock BZZ + PostageStamp
 ├── frontend/
 │   ├── src/
 │   │   ├── components/               # Nav, ThreadList, ThreadTile, UploadTile,
