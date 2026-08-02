@@ -192,9 +192,7 @@ contract PinkchainsawTest is Test {
 
     function test_multiplierIsMonotonic() public view {
         for (uint256 i = 0; i < 20; i++) {
-            assertGe(
-                board.multiplierBpsFor(3, i + 1), board.multiplierBpsFor(3, i), "downvotes never cheapen"
-            );
+            assertGe(board.multiplierBpsFor(3, i + 1), board.multiplierBpsFor(3, i), "downvotes never cheapen");
             assertLe(board.multiplierBpsFor(i + 1, 3), board.multiplierBpsFor(i, 3), "upvotes never cost more");
         }
     }

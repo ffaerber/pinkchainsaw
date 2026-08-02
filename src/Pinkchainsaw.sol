@@ -491,8 +491,7 @@ contract Pinkchainsaw is Initializable, UUPSUpgradeable {
     /// keeps a barely voted author near neutral, which is what stops two strangers pricing a
     /// newcomer off the board on their first day.
     function multiplierBpsFor(uint256 upVotes, uint256 downVotes) public pure returns (uint256) {
-        uint256 ratioBps =
-            ((upVotes + VOTE_PRIOR) * BPS_DENOMINATOR) / (upVotes + downVotes + 2 * VOTE_PRIOR);
+        uint256 ratioBps = ((upVotes + VOTE_PRIOR) * BPS_DENOMINATOR) / (upVotes + downVotes + 2 * VOTE_PRIOR);
 
         if (ratioBps <= RATIO_FLOOR_BPS) {
             return MAX_MULTIPLIER_BPS;
@@ -505,5 +504,4 @@ contract Pinkchainsaw is Initializable, UUPSUpgradeable {
         uint256 progress = ratioBps - RATIO_FLOOR_BPS;
         return MAX_MULTIPLIER_BPS - (span * progress) / (RATIO_CEIL_BPS - RATIO_FLOOR_BPS);
     }
-
 }
