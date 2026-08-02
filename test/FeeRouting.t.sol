@@ -357,6 +357,118 @@ contract FeeRoutingTest is Test {
         assertFalse(board.hasPaidSignupFee(carol));
     }
 
+    function test_walletShareIsTakenFromEveryFee() public {
+        address wallet = makeAddr("pinkchainsaw wallet");
+        board.setPinkchainsawWallet(wallet);
+        board.setWalletBps(500);
+
+        uint256 postFee = _postFee(alice);
+
+        vm.prank(alice);
+        board.createThread(bytes32("image"), ALICE_BATCH);
+
+        assertEq(bzz.balanceOf(wallet), postFee * 500 / 10000, "5% of the posting fee");
+
+        // and on votes too, which is the point: income follows activity, not just new authors
+        bytes32 threadId = board.getPaginatedThreadIds(1, 1)[0];
+        uint256 afterPost = bzz.balanceOf(wallet);
+        uint256 voteFee = board.getVoteFee();
+
+        vm.prank(bob);
+        board.upVote(threadId);
+
+        assertEq(bzz.balanceOf(wallet) - afterPost, voteFee * 500 / 10000, "5% of the vote fee");
+    }
+
+    /// The wallet share comes out of the existing fee rather than being added on top.
+    function test_walletShareDoesNotRaiseTheTotalFee() public {
+        uint256 postFee = _postFee(alice);
+        uint256 aliceBefore = bzz.balanceOf(alice);
+
+        address wallet = makeAddr("pinkchainsaw wallet");
+        board.setPinkchainsawWallet(wallet);
+        board.setWalletBps(500);
+
+        vm.prank(alice);
+        board.createThread(bytes32("image"), ALICE_BATCH);
+
+        assertEq(aliceBefore - bzz.balanceOf(alice), postFee, "the author pays no more than before");
+        assertEq(stamp.toppedUp(PROJECT_BATCH) + bzz.balanceOf(wallet), postFee, "it is only split differently");
+    }
+
+    function test_walletShareIsSkippedWithoutAWallet() public {
+        board.setWalletBps(500);
+
+        uint256 postFee = _postFee(alice);
+        uint256 aliceBefore = bzz.balanceOf(alice);
+
+        vm.prank(alice);
+        board.createThread(bytes32("image"), ALICE_BATCH);
+
+        assertEq(aliceBefore - bzz.balanceOf(alice), postFee);
+        assertEq(stamp.toppedUp(PROJECT_BATCH), postFee, "all of it still becomes storage");
+    }
+
+    /// Both project shares sit under one ceiling, so the total taken off the top is bounded.
+    function test_projectAndWalletSharesShareOneCap() public {
+        uint256 cap = board.MAX_PROJECT_BPS();
+
+        board.setProjectBps(cap - 500);
+        board.setWalletBps(500);
+
+        vm.expectRevert("project share above cap");
+        board.setWalletBps(501);
+
+        vm.expectRevert("project share above cap");
+        board.setProjectBps(cap - 499);
+    }
+
+    function test_bzzFeeCanFollowThePriceInBothDirections() public {
+        uint256 min = board.MIN_BZZ_FEE();
+        uint256 max = board.MAX_BZZ_FEE();
+
+        // if BZZ appreciates sharply the fee has to come down to keep posting affordable
+        board.setBzzFee(min);
+        assertEq(board.bzzFee(), min);
+        assertEq(board.getVoteFee(), min);
+        assertEq(board.getFee(alice), min * 3, "every other fee follows it");
+
+        board.setBzzFee(max);
+        assertEq(board.getFee(alice), max * 3);
+
+        vm.expectRevert("fee outside allowed range");
+        board.setBzzFee(min - 1);
+
+        vm.expectRevert("fee outside allowed range");
+        board.setBzzFee(max + 1);
+    }
+
+    /// Lowering the base fee must not leave a signup fee stranded above its cap.
+    function test_bzzFeeCannotBeLoweredPastTheSignupFeeCap() public {
+        board.setPinkchainsawWallet(makeAddr("pinkchainsaw wallet"));
+        board.setSignupFee(board.bzzFee() * board.MAX_SIGNUP_FEE_MULTIPLE());
+
+        vm.expectRevert("signup fee above new cap");
+        board.setBzzFee(board.MIN_BZZ_FEE());
+
+        // lowering the signup fee first makes room
+        board.setSignupFee(0);
+        board.setBzzFee(board.MIN_BZZ_FEE());
+        assertEq(board.bzzFee(), board.MIN_BZZ_FEE());
+    }
+
+    function test_onlyOwnerCanChangeTheFees() public {
+        vm.startPrank(alice);
+
+        vm.expectRevert("not owner");
+        board.setBzzFee(1e12);
+
+        vm.expectRevert("not owner");
+        board.setWalletBps(100);
+
+        vm.stopPrank();
+    }
+
     function test_contractKeepsNoTokens() public {
         vm.prank(alice);
         board.createThread(bytes32("image"), ALICE_BATCH);

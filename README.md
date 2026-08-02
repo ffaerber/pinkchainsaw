@@ -17,9 +17,10 @@ Users post images, comment, and vote using xBZZ tokens. Every fee tops up the Sw
 
 ## How Fees Work
 
-Fees are paid in xBZZ. With one exception — the signup fee below — they all land in a Swarm postage
-batch rather than anyone's wallet, and the rule is that **engagement funds the storage of the content
-being engaged with**, so a post outlives its author for as long as people keep interacting with it.
+Fees are paid in xBZZ, and mostly land in a Swarm postage batch rather than anyone's wallet: the rule
+is that **engagement funds the storage of the content being engaged with**, so a post outlives its
+author for as long as people keep interacting with it. The two exceptions, both described below, are
+the project's wallet share and the signup fee.
 
 | Action | Fee | Tops up |
 |---|---|---|
@@ -28,15 +29,31 @@ being engaged with**, so a post outlives its author for as long as people keep i
 | Reply to yourself | scaled by reputation | the Pink Chainsaw batch |
 | Upvote / downvote | flat, same for everyone | the batch of the post being voted on |
 
-A share of every fee (10% by default, capped at 20%) goes to the Pink Chainsaw batch, so the
-frontend keeps paying for its own hosting.
+The project takes a share of every fee, in two forms: one to the Pink Chainsaw **batch**, so the
+frontend keeps paying for its own hosting, and one to the Pink Chainsaw **wallet**, in spendable
+tokens. Both sit under a single ceiling of `MAX_PROJECT_BPS` (20%), so what the project takes off the
+top is one number rather than two that could each be raised. The batch share defaults to 10%; the
+wallet share starts at zero and only applies once the owner sets both it and a wallet.
+
+The wallet share comes out of the existing fee rather than being added to it, so enabling it does not
+make anything more expensive — it only splits the same fee differently. It applies to votes as well
+as posts, so unlike the signup fee it keeps earning on a board that is busy without being new.
+
+### Changing the base fee
+
+Every fee derives from `bzzFee`, which the owner can change within absolute bounds of `MIN_BZZ_FEE`
+and `MAX_BZZ_FEE`, a hundredfold either side of the launch value. The range runs in both directions
+on purpose: fees are denominated in BZZ, so if BZZ appreciates sharply the fee has to come *down* to
+keep posting affordable, and if it falls the fee can come up.
+
+The bounds are absolute rather than a multiple of the current fee, because a relative bound can be
+walked anywhere by repeated calls and so guarantees nothing.
 
 ### The signup fee
 
 Postage credit keeps content alive but cannot pay a bill. Renewing the ENS name costs ETH on
 mainnet, so the project needs some income it can actually spend. An author's **first post** pays a
-one-off signup fee in xBZZ to the Pink Chainsaw wallet — the only fee in the system that goes to a
-wallet rather than into storage.
+one-off signup fee in xBZZ to the Pink Chainsaw wallet, on top of the posting fee itself.
 
 It is charged once per address, never on votes, and skipped entirely until the owner has set a
 wallet and an amount. The amount is capped at `MAX_SIGNUP_FEE_MULTIPLE` times the base fee so the
@@ -128,7 +145,8 @@ If a local Bee node is connected, reads go through it (faster). Otherwise the pu
 - Upvote / downvote with a flat xBZZ fee
 - Reputation system: posting fees scale with an author's smoothed approval ratio
 - Fees top up the postage stamp of the content being engaged with, so popular content stays alive
-- One-off signup fee on an author's first post, the project's only spendable income
+- One-off signup fee on an author's first post, plus an optional share of every fee, as the project's spendable income
+- Base fee retunable within fixed bounds, so a rising BZZ price cannot price the board out
 - ENS name resolution for addresses
 - Live updates via contract event watching (no page reload needed)
 - Dark UI with dense tile grid and pink accent
@@ -193,6 +211,10 @@ cast send <proxy> "setProjectBps(uint256)" 1000 --rpc-url $RPC_URL --mnemonic "$
 # Optional: the signup fee, which is the only income the project can spend
 cast send <proxy> "setPinkchainsawWallet(address)" 0x<wallet> --rpc-url $RPC_URL --mnemonic "$MNEMONIC"
 cast send <proxy> "setSignupFee(uint256)" 20000000000000 --rpc-url $RPC_URL --mnemonic "$MNEMONIC"
+cast send <proxy> "setWalletBps(uint256)" 500 --rpc-url $RPC_URL --mnemonic "$MNEMONIC"          # 5% of every fee
+
+# Retune the base fee as the BZZ price moves, within MIN_BZZ_FEE and MAX_BZZ_FEE
+cast send <proxy> "setBzzFee(uint256)" 10000000000000 --rpc-url $RPC_URL --mnemonic "$MNEMONIC"
 ```
 
 ### Frontend
@@ -267,7 +289,7 @@ pinkchainsaw/
 ├── src/
 │   └── Pinkchainsaw.sol              # Main contract (threads, comments, votes, stamp top-up)
 ├── test/
-│   ├── Pinkchainsaw.t.sol            # Fork tests against Gnosis Chain (63 tests across two suites)
+│   ├── Pinkchainsaw.t.sol            # Fork tests against Gnosis Chain (70 tests across two suites)
 │   ├── FeeRouting.t.sol              # Fee destinations and fallbacks, against mocks
 │   └── mocks/Mocks.sol               # Mock BZZ + PostageStamp
 ├── frontend/

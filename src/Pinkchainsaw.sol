@@ -54,6 +54,10 @@ contract Pinkchainsaw is Initializable, UUPSUpgradeable {
     uint256 private signupFee;
     mapping(address => bool) private hasPaidSignup;
 
+    // A share of every fee paid to the project wallet in tokens. Unlike the signup fee this tracks
+    // activity rather than growth, so it keeps earning on a board that is busy but not growing.
+    uint256 private walletBps;
+
     enum PostType {
         THREAD,
         COMMENT
@@ -89,13 +93,29 @@ contract Pinkchainsaw is Initializable, UUPSUpgradeable {
     /// price cannot be raised far enough to shut new authors out without a contract upgrade.
     uint256 public constant MAX_SIGNUP_FEE_MULTIPLE = 100;
 
+    /// @notice Absolute bounds on the base fee, a hundredfold either side of the launch value.
+    /// @dev Deliberately absolute rather than a multiple of the current fee. A relative bound can be
+    /// walked anywhere by repeated calls, so it guarantees nothing. These are what a reader can
+    /// check once and rely on. The range exists in both directions because the fee is denominated
+    /// in BZZ: if BZZ appreciates sharply the fee has to come down to keep posting affordable.
+    uint256 public constant MIN_BZZ_FEE = 10 ** 11;
+    uint256 public constant MAX_BZZ_FEE = 10 ** 15;
+
     event BatchRegistered(address indexed author, bytes32 batchId);
     event PinkchainsawBatchUpdated(bytes32 batchId);
     event PinkchainsawWalletUpdated(address wallet);
     event ProjectShareUpdated(uint256 bps);
+    event WalletShareUpdated(uint256 bps);
+    event BzzFeeUpdated(uint256 fee);
     event SignupFeeUpdated(uint256 fee);
     event SignupFeePaid(address indexed author, uint256 amount);
-    event FeePaid(address indexed payer, bytes32 targetBatchId, uint256 targetAmount, uint256 projectAmount);
+    event FeePaid(
+        address indexed payer,
+        bytes32 targetBatchId,
+        uint256 targetAmount,
+        uint256 projectAmount,
+        uint256 walletAmount
+    );
     event ThreadCreated(bytes32 id);
     event ThreadUpdated(bytes32 id);
     event CommentUpdated(bytes32 id);
@@ -149,9 +169,32 @@ contract Pinkchainsaw is Initializable, UUPSUpgradeable {
     }
 
     function setProjectBps(uint256 _bps) public onlyOwner {
-        require(_bps <= MAX_PROJECT_BPS, "project share above cap");
+        require(_bps + walletBps <= MAX_PROJECT_BPS, "project share above cap");
         projectBps = _bps;
         emit ProjectShareUpdated(_bps);
+    }
+
+    /// @notice The share of every fee paid to the project wallet in tokens, in basis points.
+    function getWalletBps() public view returns (uint256) {
+        return walletBps;
+    }
+
+    /// @dev Capped together with the batch share, so MAX_PROJECT_BPS bounds everything the project
+    /// takes off the top, in either form. Two separate caps would not bound the total.
+    function setWalletBps(uint256 _bps) public onlyOwner {
+        require(_bps + projectBps <= MAX_PROJECT_BPS, "project share above cap");
+        walletBps = _bps;
+        emit WalletShareUpdated(_bps);
+    }
+
+    /// @notice Set the base fee that every other fee is derived from.
+    /// @dev Bounded so the owner can follow the BZZ price in either direction, but cannot price the
+    /// board out of reach or make it free.
+    function setBzzFee(uint256 _fee) public onlyOwner {
+        require(_fee >= MIN_BZZ_FEE && _fee <= MAX_BZZ_FEE, "fee outside allowed range");
+        require(signupFee <= _fee * MAX_SIGNUP_FEE_MULTIPLE, "signup fee above new cap");
+        bzzFee = _fee;
+        emit BzzFeeUpdated(_fee);
     }
 
     /// @notice What an upvote or a downvote costs. Flat for everyone, so that a well reputed
@@ -257,15 +300,20 @@ contract Pinkchainsaw is Initializable, UUPSUpgradeable {
             return;
         }
 
+        // the wallet share is taken first, in tokens, and is the only part that does not become
+        // storage. It is skipped entirely until a wallet is configured.
+        address wallet = pinkchainsawWallet;
+        uint256 walletAmount = wallet == address(0) ? 0 : (_amount * walletBps) / BPS_DENOMINATOR;
+
         bytes32 projectBatch = pinkchainsawBatchId;
         uint256 projectAmount;
         uint256 targetAmount;
 
         if (_targetBatchId == bytes32(0) || _targetBatchId == projectBatch) {
-            projectAmount = _amount;
+            projectAmount = _amount - walletAmount;
         } else {
             projectAmount = (_amount * projectBps) / BPS_DENOMINATOR;
-            targetAmount = _amount - projectAmount;
+            targetAmount = _amount - walletAmount - projectAmount;
         }
 
         (uint256 targetPerChunk, uint256 targetTotal) = _quoteTopUp(_targetBatchId, targetAmount);
@@ -276,7 +324,7 @@ contract Pinkchainsaw is Initializable, UUPSUpgradeable {
 
         (uint256 projectPerChunk, uint256 projectTotal) = _quoteTopUp(projectBatch, projectAmount);
 
-        uint256 total = targetTotal + projectTotal;
+        uint256 total = targetTotal + projectTotal + walletAmount;
         if (total == 0) {
             return;
         }
@@ -290,13 +338,17 @@ contract Pinkchainsaw is Initializable, UUPSUpgradeable {
         if (projectTotal > 0) {
             spent += _executeTopUp(projectBatch, projectPerChunk, projectTotal);
         }
+        if (walletAmount > 0) {
+            require(bzzToken.transfer(wallet, walletAmount), "wallet transfer failed");
+            spent += walletAmount;
+        }
 
         // a top up can still be refused for a reason the quote cannot see, such as an expired batch
         if (spent < total) {
             require(bzzToken.transfer(msg.sender, total - spent), "refund failed");
         }
 
-        emit FeePaid(msg.sender, _targetBatchId, targetTotal, projectTotal);
+        emit FeePaid(msg.sender, _targetBatchId, targetTotal, projectTotal, walletAmount);
     }
 
     /// @dev What a batch can actually take, or zero when it cannot take anything. A batch that has
