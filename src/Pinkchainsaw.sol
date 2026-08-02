@@ -110,11 +110,7 @@ contract Pinkchainsaw is Initializable, UUPSUpgradeable {
     event SignupFeeUpdated(uint256 fee);
     event SignupFeePaid(address indexed author, uint256 amount);
     event FeePaid(
-        address indexed payer,
-        bytes32 targetBatchId,
-        uint256 targetAmount,
-        uint256 projectAmount,
-        uint256 walletAmount
+        address indexed payer, bytes32 targetBatchId, uint256 targetAmount, uint256 projectAmount, uint256 walletAmount
     );
     event ThreadCreated(bytes32 id);
     event ThreadUpdated(bytes32 id);
