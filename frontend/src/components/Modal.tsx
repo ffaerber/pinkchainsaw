@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
 import { useAccount, useBalance, useConnect, useDisconnect, useReadContract, useWriteContract, useWaitForTransactionReceipt } from 'wagmi'
-import { maxUint256 } from 'viem'
+import { formatUnits, maxUint256 } from 'viem'
 import toast from 'react-hot-toast'
-import { BZZ_TOKEN_ADDRESS, ERC20_ABI, PINKCHAINSAW_ABI, PINKCHAINSAW_ADDRESS } from '../config/contracts'
+import { BZZ_DECIMALS, BZZ_TOKEN_ADDRESS, ERC20_ABI, PINKCHAINSAW_ABI, PINKCHAINSAW_ADDRESS } from '../config/contracts'
 import { useBeeContext } from '../hooks/BeeContext'
 import { usePostingBatch } from '../hooks/usePostingBatch'
 import { txErrorMessage } from '../lib/errors'
@@ -36,6 +36,16 @@ export default function Modal({ handleClose }: ModalProps) {
   const hasAllowance = bzzAllowance && (bzzAllowance as bigint) > 0n
 
   const { registeredBatchId, registeredBatchOnNode, refetchRegisteredBatch } = usePostingBatch()
+
+  // A one off charge on the first post, so it should not be a surprise in the wallet prompt
+  const { data: outstandingSignup } = useReadContract({
+    address: PINKCHAINSAW_ADDRESS,
+    abi: PINKCHAINSAW_ABI,
+    functionName: 'getOutstandingSignupFee',
+    args: address ? [address] : undefined,
+    query: { enabled: !!address },
+  })
+  const signupFee = (outstandingSignup as bigint | undefined) ?? 0n
 
   const { writeContract, data: approveTxHash } = useWriteContract({
     mutation: { onError: (err) => toast.error(txErrorMessage(err)) },
@@ -115,6 +125,15 @@ export default function Modal({ handleClose }: ModalProps) {
               </div>
             </li>
             <Check ok={peerCount > 0} label={`Swarm peers: ${peerCount}`} fail="No peers connected" />
+
+            {signupFee > 0n && (
+              <li className="flex items-start gap-2">
+                <span className="text-yellow-500">!</span>
+                <span className="text-[#888]">
+                  Your first post also pays a one-off {formatUnits(signupFee, BZZ_DECIMALS)} xBZZ signup fee
+                </span>
+              </li>
+            )}
 
             <li className="flex items-start gap-2">
               {allBatches.length > 0 ? (

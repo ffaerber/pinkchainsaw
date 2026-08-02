@@ -264,6 +264,99 @@ contract FeeRoutingTest is Test {
         vm.stopPrank();
     }
 
+    function test_signupFeeIsChargedOnceToTheProjectWallet() public {
+        address wallet = makeAddr("pinkchainsaw wallet");
+        board.setPinkchainsawWallet(wallet);
+        board.setSignupFee(2e13);
+
+        assertEq(board.getOutstandingSignupFee(alice), 2e13);
+
+        vm.prank(alice);
+        board.createThread(bytes32("image"), ALICE_BATCH);
+
+        assertEq(bzz.balanceOf(wallet), 2e13, "the wallet is paid in tokens, not postage");
+        assertTrue(board.hasPaidSignupFee(alice));
+        assertEq(board.getOutstandingSignupFee(alice), 0);
+
+        // a second post from the same author is not charged again
+        vm.prank(alice);
+        board.createThread(bytes32("another image"), ALICE_BATCH);
+
+        assertEq(bzz.balanceOf(wallet), 2e13, "still only charged once");
+    }
+
+    function test_signupFeeAppliesToAFirstCommentToo() public {
+        address wallet = makeAddr("pinkchainsaw wallet");
+        board.setPinkchainsawWallet(wallet);
+        board.setSignupFee(2e13);
+
+        vm.prank(alice);
+        board.createThread(bytes32("image"), ALICE_BATCH);
+        bytes32 threadId = board.getPaginatedThreadIds(1, 1)[0];
+
+        uint256 afterAlice = bzz.balanceOf(wallet);
+
+        // bob has never posted, so his first comment pays the signup fee
+        vm.prank(bob);
+        board.createComment(threadId, bytes32("gm"), BOB_BATCH);
+
+        assertEq(bzz.balanceOf(wallet) - afterAlice, 2e13);
+        assertTrue(board.hasPaidSignupFee(bob));
+    }
+
+    function test_signupFeeIsSkippedUntilConfigured() public {
+        uint256 aliceBefore = bzz.balanceOf(alice);
+        uint256 postFee = _postFee(alice);
+
+        // no wallet set yet
+        vm.prank(alice);
+        board.createThread(bytes32("image"), ALICE_BATCH);
+
+        assertEq(aliceBefore - bzz.balanceOf(alice), postFee, "only the posting fee is charged");
+        assertFalse(board.hasPaidSignupFee(alice), "and the author still owes it later");
+    }
+
+    function test_signupFeeIsCapped() public {
+        uint256 cap = board.bzzFee() * board.MAX_SIGNUP_FEE_MULTIPLE();
+
+        vm.expectRevert("signup fee above cap");
+        board.setSignupFee(cap + 1);
+
+        board.setSignupFee(cap);
+        assertEq(board.getSignupFee(), cap);
+    }
+
+    function test_onlyOwnerCanConfigureTheSignupFee() public {
+        vm.startPrank(alice);
+
+        vm.expectRevert("not owner");
+        board.setPinkchainsawWallet(alice);
+
+        vm.expectRevert("not owner");
+        board.setSignupFee(1);
+
+        vm.stopPrank();
+    }
+
+    function test_votingNeverChargesTheSignupFee() public {
+        address wallet = makeAddr("pinkchainsaw wallet");
+        board.setPinkchainsawWallet(wallet);
+        board.setSignupFee(2e13);
+
+        vm.prank(alice);
+        board.createThread(bytes32("image"), ALICE_BATCH);
+        bytes32 threadId = board.getPaginatedThreadIds(1, 1)[0];
+
+        uint256 afterAlice = bzz.balanceOf(wallet);
+
+        // carol has never posted, so voting is her first interaction
+        vm.prank(carol);
+        board.upVote(threadId);
+
+        assertEq(bzz.balanceOf(wallet), afterAlice, "an account can vote without signing up");
+        assertFalse(board.hasPaidSignupFee(carol));
+    }
+
     function test_contractKeepsNoTokens() public {
         vm.prank(alice);
         board.createThread(bytes32("image"), ALICE_BATCH);

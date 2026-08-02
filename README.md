@@ -17,9 +17,9 @@ Users post images, comment, and vote using xBZZ tokens. Every fee tops up the Sw
 
 ## How Fees Work
 
-Every fee is paid in xBZZ and lands in a Swarm postage batch — never in anyone's wallet. The rule is
-that **engagement funds the storage of the content being engaged with**, so a post outlives its
-author for as long as people keep interacting with it.
+Fees are paid in xBZZ. With one exception — the signup fee below — they all land in a Swarm postage
+batch rather than anyone's wallet, and the rule is that **engagement funds the storage of the content
+being engaged with**, so a post outlives its author for as long as people keep interacting with it.
 
 | Action | Fee | Tops up |
 |---|---|---|
@@ -30,6 +30,20 @@ author for as long as people keep interacting with it.
 
 A share of every fee (10% by default, capped at 20%) goes to the Pink Chainsaw batch, so the
 frontend keeps paying for its own hosting.
+
+### The signup fee
+
+Postage credit keeps content alive but cannot pay a bill. Renewing the ENS name costs ETH on
+mainnet, so the project needs some income it can actually spend. An author's **first post** pays a
+one-off signup fee in xBZZ to the Pink Chainsaw wallet — the only fee in the system that goes to a
+wallet rather than into storage.
+
+It is charged once per address, never on votes, and skipped entirely until the owner has set a
+wallet and an amount. The amount is capped at `MAX_SIGNUP_FEE_MULTIPLE` times the base fee so the
+entry price cannot be raised far enough to shut newcomers out without a contract upgrade.
+
+It doubles as the first real cost of creating an identity. Everything else in the system is cheap
+enough that throwaway accounts are free, which is what makes vote griefing affordable.
 
 Voting is a flat price for everyone, so a well reputed account cannot vote, or grief, more cheaply
 than a new one. Posting scales with how an author's content has been received, between 1x and 5x of
@@ -114,6 +128,7 @@ If a local Bee node is connected, reads go through it (faster). Otherwise the pu
 - Upvote / downvote with a flat xBZZ fee
 - Reputation system: posting fees scale with an author's smoothed approval ratio
 - Fees top up the postage stamp of the content being engaged with, so popular content stays alive
+- One-off signup fee on an author's first post, the project's only spendable income
 - ENS name resolution for addresses
 - Live updates via contract event watching (no page reload needed)
 - Dark UI with dense tile grid and pink accent
@@ -174,6 +189,10 @@ owner has to register the project batch, otherwise fees have nowhere to go and p
 ```bash
 cast send <proxy> "setPinkchainsawBatchId(bytes32)" 0x<batch-id> --rpc-url $RPC_URL --mnemonic "$MNEMONIC"
 cast send <proxy> "setProjectBps(uint256)" 1000 --rpc-url $RPC_URL --mnemonic "$MNEMONIC"   # upgrades only
+
+# Optional: the signup fee, which is the only income the project can spend
+cast send <proxy> "setPinkchainsawWallet(address)" 0x<wallet> --rpc-url $RPC_URL --mnemonic "$MNEMONIC"
+cast send <proxy> "setSignupFee(uint256)" 20000000000000 --rpc-url $RPC_URL --mnemonic "$MNEMONIC"
 ```
 
 ### Frontend
@@ -248,7 +267,7 @@ pinkchainsaw/
 ├── src/
 │   └── Pinkchainsaw.sol              # Main contract (threads, comments, votes, stamp top-up)
 ├── test/
-│   ├── Pinkchainsaw.t.sol            # Fork tests against Gnosis Chain (57 tests across two suites)
+│   ├── Pinkchainsaw.t.sol            # Fork tests against Gnosis Chain (63 tests across two suites)
 │   ├── FeeRouting.t.sol              # Fee destinations and fallbacks, against mocks
 │   └── mocks/Mocks.sol               # Mock BZZ + PostageStamp
 ├── frontend/

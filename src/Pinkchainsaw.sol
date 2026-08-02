@@ -47,6 +47,13 @@ contract Pinkchainsaw is Initializable, UUPSUpgradeable {
     mapping(address => uint256) private addressToUpVotes;
     mapping(address => uint256) private addressToDownVotes;
 
+    // The one place value leaves the contract as spendable tokens rather than storage credit: a
+    // one off fee on an author's first post, which is what funds ENS renewals and other running
+    // costs that cannot be paid in postage.
+    address private pinkchainsawWallet;
+    uint256 private signupFee;
+    mapping(address => bool) private hasPaidSignup;
+
     enum PostType {
         THREAD,
         COMMENT
@@ -78,9 +85,16 @@ contract Pinkchainsaw is Initializable, UUPSUpgradeable {
     uint256 private constant RATIO_FLOOR_BPS = 2500;
     uint256 private constant RATIO_CEIL_BPS = 7500;
 
+    /// @notice The signup fee can never exceed this many times the base posting fee, so the entry
+    /// price cannot be raised far enough to shut new authors out without a contract upgrade.
+    uint256 public constant MAX_SIGNUP_FEE_MULTIPLE = 100;
+
     event BatchRegistered(address indexed author, bytes32 batchId);
     event PinkchainsawBatchUpdated(bytes32 batchId);
+    event PinkchainsawWalletUpdated(address wallet);
     event ProjectShareUpdated(uint256 bps);
+    event SignupFeeUpdated(uint256 fee);
+    event SignupFeePaid(address indexed author, uint256 amount);
     event FeePaid(address indexed payer, bytes32 targetBatchId, uint256 targetAmount, uint256 projectAmount);
     event ThreadCreated(bytes32 id);
     event ThreadUpdated(bytes32 id);
@@ -144,6 +158,59 @@ contract Pinkchainsaw is Initializable, UUPSUpgradeable {
     /// account cannot vote more cheaply than a new one.
     function getVoteFee() public view returns (uint256) {
         return bzzFee;
+    }
+
+    /// @notice Where the signup fee is paid. Unlike every other fee this is a wallet, not a batch,
+    /// because running costs such as ENS renewals cannot be paid in postage.
+    function getPinkchainsawWallet() public view returns (address) {
+        return pinkchainsawWallet;
+    }
+
+    function setPinkchainsawWallet(address _wallet) public onlyOwner {
+        pinkchainsawWallet = _wallet;
+        emit PinkchainsawWalletUpdated(_wallet);
+    }
+
+    /// @notice A one off charge on an author's first post. Zero disables it.
+    function getSignupFee() public view returns (uint256) {
+        return signupFee;
+    }
+
+    function setSignupFee(uint256 _fee) public onlyOwner {
+        require(_fee <= bzzFee * MAX_SIGNUP_FEE_MULTIPLE, "signup fee above cap");
+        signupFee = _fee;
+        emit SignupFeeUpdated(_fee);
+    }
+
+    /// @notice Whether this author has already paid the signup fee, so will not be charged again.
+    function hasPaidSignupFee(address author) public view returns (bool) {
+        return hasPaidSignup[author];
+    }
+
+    /// @notice What this author owes on their next post beyond the posting fee itself.
+    function getOutstandingSignupFee(address author) public view returns (uint256) {
+        if (hasPaidSignup[author] || pinkchainsawWallet == address(0)) {
+            return 0;
+        }
+        return signupFee;
+    }
+
+    /// @dev Charged once per author, on their first post. Skipped rather than reverted when it is
+    /// not configured, so that posting works before the owner has set a wallet.
+    function _paySignupFee() internal {
+        if (hasPaidSignup[msg.sender]) {
+            return;
+        }
+
+        uint256 fee = signupFee;
+        address wallet = pinkchainsawWallet;
+        if (fee == 0 || wallet == address(0)) {
+            return;
+        }
+
+        hasPaidSignup[msg.sender] = true;
+        emit SignupFeePaid(msg.sender, fee);
+        require(bzzToken.transferFrom(msg.sender, wallet, fee), "signup fee failed");
     }
 
     /// @notice The postage batch that funds this author's posts, or zero before their first post.
@@ -326,6 +393,7 @@ contract Pinkchainsaw is Initializable, UUPSUpgradeable {
         emit ThreadCreated(threadId);
 
         _bindBatch(_batchId);
+        _paySignupFee();
         // a thread has nobody to reply to, so its fee keeps the frontend alive
         _payFee(pinkchainsawBatchId, getFee(msg.sender));
         return true;
@@ -394,6 +462,7 @@ contract Pinkchainsaw is Initializable, UUPSUpgradeable {
         emit CommentCreated(commentId);
 
         _bindBatch(_batchId);
+        _paySignupFee();
         // the fee keeps alive the post being replied to, whether that is a thread or a comment
         _payFee(_batchOf(parentOwner), getFee(msg.sender));
         return true;

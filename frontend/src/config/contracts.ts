@@ -2,6 +2,9 @@ import pinkchainsawAbi from '../abi/Pinkchainsaw.json'
 
 export const BZZ_TOKEN_ADDRESS = '0xdBF3Ea6F5beE45c02255B2c26a16F300502F68da' as const
 
+/// xBZZ uses 16 decimals rather than the usual 18
+export const BZZ_DECIMALS = 16
+
 // Deployed proxy on Gnosis Chain. Override for local Anvil runs via frontend/.env
 export const PINKCHAINSAW_ADDRESS = (import.meta.env.VITE_CONTRACT_ADDRESS
   || '0x95cBdd7d64040C101240c93fc7B55EC6c2679368') as `0x${string}`
