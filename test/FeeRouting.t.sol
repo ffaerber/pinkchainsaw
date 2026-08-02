@@ -242,11 +242,14 @@ contract FeeRoutingTest is Test {
     }
 
     function test_projectShareIsCapped() public {
-        vm.expectRevert("project share above cap");
-        board.setProjectBps(board.MAX_PROJECT_BPS() + 1);
+        // read the cap first: an external call here would consume the expectRevert
+        uint256 cap = board.MAX_PROJECT_BPS();
 
-        board.setProjectBps(board.MAX_PROJECT_BPS());
-        assertEq(board.getProjectBps(), board.MAX_PROJECT_BPS());
+        vm.expectRevert("project share above cap");
+        board.setProjectBps(cap + 1);
+
+        board.setProjectBps(cap);
+        assertEq(board.getProjectBps(), cap);
     }
 
     function test_onlyOwnerCanConfigureTheProject() public {

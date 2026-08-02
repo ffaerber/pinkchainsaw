@@ -374,12 +374,12 @@ contract PinkchainsawTest is Test {
         IERC20(BZZ).approve(address(board), type(uint256).max);
         board.upVote(threadId);
 
-        uint256 fee = board.getVoteFee();
+        uint256 charged = _chargeFor(board.getVoteFee());
         uint256 bobBefore = IERC20(BZZ).balanceOf(bob);
         board.downVote(threadId);
         vm.stopPrank();
 
-        assertEq(bobBefore - IERC20(BZZ).balanceOf(bob), fee, "flipping a vote costs a fee");
+        assertEq(bobBefore - IERC20(BZZ).balanceOf(bob), charged, "flipping a vote costs a fee");
     }
 
     function test_cannotSelfVote() public {
@@ -665,17 +665,27 @@ contract PinkchainsawTest is Test {
         uint256 fee = board.getVoteFee();
         assertEq(fee, board.bzzFee(), "the vote fee carries no social score multiplier");
 
+        // a top up can only move whole chunks, so the charge is the fee rounded down to the
+        // batch's chunk size, exactly as the contract computes it
+        uint256 charged = _chargeFor(fee);
+
         vm.startPrank(bob);
         IERC20(BZZ).approve(address(board), type(uint256).max);
 
         uint256 bobBefore = IERC20(BZZ).balanceOf(bob);
         board.upVote(threadIds[0]);
-        assertEq(bobBefore - IERC20(BZZ).balanceOf(bob), fee, "bob spends exactly the vote fee");
+        assertEq(bobBefore - IERC20(BZZ).balanceOf(bob), charged, "bob spends the vote fee");
 
         bobBefore = IERC20(BZZ).balanceOf(bob);
         board.downVote(threadIds[0]);
-        assertEq(bobBefore - IERC20(BZZ).balanceOf(bob), fee, "and the same again to flip it");
+        assertEq(bobBefore - IERC20(BZZ).balanceOf(bob), charged, "and the same again to flip it");
         vm.stopPrank();
+    }
+
+    /// What a fee actually costs once it has been rounded to whole chunks of the batch.
+    function _chargeFor(uint256 fee) internal view returns (uint256) {
+        (, uint8 depth,,,) = IPostageStamp(POSTAGE_STAMP).batches(batchId);
+        return (fee >> depth) << depth;
     }
 
     function test_feeScalesWithNegativeSocialScore() public {
