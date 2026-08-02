@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useReadContract, useWatchContractEvent } from 'wagmi'
 import { PINKCHAINSAW_ABI, PINKCHAINSAW_ADDRESS } from '../config/contracts'
 import ThreadTile from './ThreadTile'
@@ -11,7 +11,7 @@ export default function ThreadList() {
   const [allLoaded, setAllLoaded] = useState(false)
   const hashesPerPage = 20
 
-  const { data: totalThreads } = useReadContract({
+  const { data: totalThreads, error: totalThreadsError } = useReadContract({
     address: PINKCHAINSAW_ADDRESS,
     abi: PINKCHAINSAW_ABI,
     functionName: 'getTotalThreads',
@@ -54,26 +54,22 @@ export default function ThreadList() {
     eventName: 'ThreadCreated',
     onLogs(logs) {
       for (const log of logs) {
-        const bzzhash = (log as any).args?.bzzhash as string
-        if (bzzhash) {
-          setAllThreadIds(prev => prev.includes(bzzhash) ? prev : [bzzhash, ...prev])
+        // the event carries the post id, not the swarm hash
+        const id = (log as any).args?.id as string
+        if (id) {
+          setAllThreadIds(prev => prev.includes(id) ? prev : [id, ...prev])
         }
       }
     },
   })
 
-  const loaderRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    if (!loaderRef.current) return
-    const observer = new IntersectionObserver(([entry]) => {
-      if (entry.isIntersecting && !allLoaded && currentPage !== null && currentPage >= 1) {
-        // triggers re-render
-      }
-    })
-    observer.observe(loaderRef.current)
-    return () => observer.disconnect()
-  }, [allLoaded, currentPage])
+  if (totalThreadsError) {
+    return (
+      <p className="text-center text-[#888] mt-20 text-sm">
+        Could not reach the contract. Check your network connection and reload.
+      </p>
+    )
+  }
 
   return (
     <div className="flex flex-wrap gap-1 p-1 justify-center">
@@ -82,7 +78,7 @@ export default function ThreadList() {
         <ThreadTile threadId={threadId} key={threadId} />
       ))}
       {!allLoaded && (
-        <div ref={loaderRef} className="w-[128px] h-[128px] bg-[#212121] animate-pulse" />
+        <div className="w-[128px] h-[128px] bg-[#212121] animate-pulse" />
       )}
     </div>
   )

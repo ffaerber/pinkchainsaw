@@ -20,10 +20,16 @@ export function useBee() {
 
   // Check local Bee node health (with timeout to avoid hanging on mixed-content blocks)
   useEffect(() => {
-    const timeout = new Promise<never>((_, reject) => setTimeout(() => reject('timeout'), 3000))
+    let cancelled = false
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error('timeout')), 3000)
+    })
     Promise.race([localBee.isConnected(), timeout])
-      .then(setIsConnected)
-      .catch(() => setIsConnected(false))
+      .then(connected => { if (!cancelled) setIsConnected(connected) })
+      .catch(() => { if (!cancelled) setIsConnected(false) })
+      .finally(() => clearTimeout(timer))
+    return () => { cancelled = true; clearTimeout(timer) }
   }, [localBee])
 
   // Fetch topology from local node

@@ -1,7 +1,11 @@
+import { useEffect, useState } from 'react'
 import { useAccount, useBalance, useConnect, useDisconnect, useReadContract, useWriteContract, useWaitForTransactionReceipt } from 'wagmi'
-import { maxUint256 } from 'viem'
-import { BZZ_TOKEN_ADDRESS, ERC20_ABI, PINKCHAINSAW_ADDRESS } from '../config/contracts'
+import { formatUnits, maxUint256 } from 'viem'
+import toast from 'react-hot-toast'
+import { BZZ_DECIMALS, BZZ_TOKEN_ADDRESS, ERC20_ABI, PINKCHAINSAW_ABI, PINKCHAINSAW_ADDRESS } from '../config/contracts'
 import { useBeeContext } from '../hooks/BeeContext'
+import { usePostingBatch } from '../hooks/usePostingBatch'
+import { txErrorMessage } from '../lib/errors'
 
 interface ModalProps {
   handleClose: () => void
@@ -12,6 +16,9 @@ export default function Modal({ handleClose }: ModalProps) {
   const { connect, connectors } = useConnect()
   const { disconnect } = useDisconnect()
   const { isConnected: beeConnected, peerCount, allBatches, batchId, selectBatch, beeUrl, updateBeeUrl } = useBeeContext()
+
+  // Kept local so that typing a URL does not rebuild the Bee client on every keystroke
+  const [beeUrlInput, setBeeUrlInput] = useState(beeUrl)
 
   const { data: xdaiBalance } = useBalance({ address })
   const hasXdai = xdaiBalance && xdaiBalance.value > 0n
@@ -28,12 +35,48 @@ export default function Modal({ handleClose }: ModalProps) {
   })
   const hasAllowance = bzzAllowance && (bzzAllowance as bigint) > 0n
 
-  const { writeContract, data: approveTxHash } = useWriteContract()
+  const { registeredBatchId, registeredBatchOnNode, refetchRegisteredBatch } = usePostingBatch()
+
+  // A one off charge on the first post, so it should not be a surprise in the wallet prompt
+  const { data: outstandingSignup } = useReadContract({
+    address: PINKCHAINSAW_ADDRESS,
+    abi: PINKCHAINSAW_ABI,
+    functionName: 'getOutstandingSignupFee',
+    args: address ? [address] : undefined,
+    query: { enabled: !!address },
+  })
+  const signupFee = (outstandingSignup as bigint | undefined) ?? 0n
+
+  const { writeContract, data: approveTxHash } = useWriteContract({
+    mutation: { onError: (err) => toast.error(txErrorMessage(err)) },
+  })
   const { isSuccess: approveSuccess } = useWaitForTransactionReceipt({ hash: approveTxHash })
 
   const handleApprove = () => {
     writeContract({ address: BZZ_TOKEN_ADDRESS, abi: ERC20_ABI, functionName: 'approve', args: [PINKCHAINSAW_ADDRESS, maxUint256] })
   }
+
+  // Posts can only pay into the batch registered on chain, so switching stamps takes a
+  // transaction rather than just a different local selection.
+  const { writeContract: writeBatch, data: batchTxHash, isPending: batchPending } = useWriteContract({
+    mutation: { onError: (err) => toast.error(txErrorMessage(err)) },
+  })
+  const { isSuccess: batchSuccess } = useWaitForTransactionReceipt({ hash: batchTxHash })
+
+  useEffect(() => {
+    if (batchSuccess) { toast.success('Stamp registered!'); refetchRegisteredBatch() }
+  }, [batchSuccess, refetchRegisteredBatch])
+
+  const handleRegisterBatch = (id: string) => {
+    writeBatch({
+      address: PINKCHAINSAW_ADDRESS,
+      abi: PINKCHAINSAW_ABI,
+      functionName: 'setBatchId',
+      args: [`0x${id}` as `0x${string}`],
+    })
+  }
+
+  const batchMismatch = !!registeredBatchId && !!batchId && batchId !== registeredBatchId
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90">
@@ -51,7 +94,13 @@ export default function Modal({ handleClose }: ModalProps) {
                     <a onClick={() => disconnect()} className="text-[#e84393] underline cursor-pointer">disconnect</a>
                   </span>
                 ) : (
-                  <span className="text-[#888]">No wallet — <a onClick={() => connect({ connector: connectors[0] })} className="text-[#e84393] underline cursor-pointer">connect now</a></span>
+                  <span className="text-[#888]">
+                    {connectors.length > 0 ? (
+                      <>No wallet — <a onClick={() => connect({ connector: connectors[0] })} className="text-[#e84393] underline cursor-pointer">connect now</a></>
+                    ) : (
+                      <>No injected wallet found — install <a target="_blank" href="https://metamask.io/" className="text-[#e84393] underline">MetaMask</a></>
+                    )}
+                  </span>
                 )}
               </div>
             </li>
@@ -66,14 +115,25 @@ export default function Modal({ handleClose }: ModalProps) {
                 </span>
                 <input
                   type="text"
-                  value={beeUrl}
-                  onChange={e => updateBeeUrl(e.target.value)}
+                  value={beeUrlInput}
+                  onChange={e => setBeeUrlInput(e.target.value)}
+                  onBlur={() => { if (beeUrlInput !== beeUrl) updateBeeUrl(beeUrlInput) }}
+                  onKeyDown={e => { if (e.key === 'Enter') updateBeeUrl(beeUrlInput) }}
                   placeholder="http://localhost:1633"
                   className="mt-1 w-full bg-[#161618] border border-[#252525] rounded text-sm text-[#f2f5f4] p-1"
                 />
               </div>
             </li>
             <Check ok={peerCount > 0} label={`Swarm peers: ${peerCount}`} fail="No peers connected" />
+
+            {signupFee > 0n && (
+              <li className="flex items-start gap-2">
+                <span className="text-yellow-500">!</span>
+                <span className="text-[#888]">
+                  Your first post also pays a one-off {formatUnits(signupFee, BZZ_DECIMALS)} xBZZ signup fee
+                </span>
+              </li>
+            )}
 
             <li className="flex items-start gap-2">
               {allBatches.length > 0 ? (
@@ -92,6 +152,29 @@ export default function Modal({ handleClose }: ModalProps) {
                         </option>
                       ))}
                     </select>
+
+                    {registeredBatchId ? (
+                      <p className="mt-1 text-xs text-[#888]">
+                        Posts pay into{' '}
+                        <span className="font-mono">{registeredBatchId.slice(0, 16)}...</span>
+                        {!registeredBatchOnNode && (
+                          <span className="text-yellow-500"> — not on this node, pick another stamp below</span>
+                        )}
+                      </p>
+                    ) : (
+                      <p className="mt-1 text-xs text-[#888]">Your first post registers this stamp on chain.</p>
+                    )}
+
+                    {batchMismatch && (
+                      <p className="mt-1 text-xs text-[#888]">
+                        <a
+                          onClick={() => !batchPending && handleRegisterBatch(batchId!)}
+                          className={batchPending ? 'text-[#444]' : 'text-[#e84393] underline cursor-pointer'}
+                        >
+                          {batchPending ? 'registering...' : 'pay into the selected stamp instead'}
+                        </a>
+                      </p>
+                    )}
                   </div>
                 </>
               ) : (
