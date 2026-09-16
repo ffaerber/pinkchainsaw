@@ -9,7 +9,7 @@ import ChainGuard from './components/ChainGuard'
 import Nav from './components/Nav'
 import ThreadList from './components/ThreadList'
 import ThreadDetails from './components/ThreadDetails'
-import Modal from './components/Modal'
+import ConnectModal from './components/ConnectModal'
 import { useState } from 'react'
 
 const queryClient = new QueryClient()
@@ -23,9 +23,7 @@ function AppContent() {
       <HashRouter>
         {isConnected && <ChainGuard />}
         <Nav onConnectClick={() => setModalOpen(true)} />
-        {modalOpen && (
-          <Modal handleClose={() => setModalOpen(false)} />
-        )}
+        {modalOpen && <ConnectModal onClose={() => setModalOpen(false)} />}
         <Routes>
           <Route path="/" element={<ThreadList />} />
           <Route path="/threads/:threadId" element={<ThreadDetails />} />
