@@ -44,5 +44,11 @@ export const ERC20_ABI = [
   },
 ] as const
 
+// The batch uploads should be stamped with. Without this the app takes the first
+// usable batch the node reports, which on a node that also runs other services
+// can be any of them — and content then lives or dies by a batch that has
+// nothing to do with this app. Users can still pick another batch by hand.
+export const PREFERRED_BATCH_ID = '35b2db745f578fff78009be8f87c253f73272d179c66d0020710bbc1d1a9e517'
+
 export const BEE_GATEWAY_URL = 'https://api.gateway.ethswarm.org'
 export const BEE_API_URL = 'http://localhost:1633'

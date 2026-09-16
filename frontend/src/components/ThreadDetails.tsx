@@ -4,6 +4,7 @@ import { useAccount, useReadContract, useWriteContract, useWaitForTransactionRec
 import toast from 'react-hot-toast'
 import { PINKCHAINSAW_ABI, PINKCHAINSAW_ADDRESS, BZZ_TOKEN_ADDRESS, ERC20_ABI } from '../config/contracts'
 import { useBeeContext } from '../hooks/BeeContext'
+import { useBzzStatus } from '../hooks/useBzzStatus'
 import CommentItem from './CommentItem'
 import EnsName from './EnsName'
 
@@ -29,6 +30,7 @@ export default function ThreadDetails() {
   const post = thread as any
   const bzzhash = post?.bzzhash ? (post.bzzhash as string).replace('0x', '') : ''
   const imgSrc = bzzhash ? `${readUrl}/bzz/${bzzhash}` : ''
+  const imageStatus = useBzzStatus(readUrl, bzzhash || undefined)
 
   // Voting
   const { writeContract: writeVote, data: voteTxHash } = useWriteContract()
@@ -83,9 +85,24 @@ export default function ThreadDetails() {
 
   return (
     <div className="max-w-[900px] mx-auto">
-      {/* Image */}
+      {/* Image. Unlike the grid, the thread is not hidden when its image has
+          expired: the votes, the comments and the score are all still here and
+          still worth reading. Only the picture is gone, so say that. */}
       <div className="bg-black flex justify-center">
-        <img className="max-w-full max-h-[80vh]" src={imgSrc} alt="" />
+        {imageStatus === 'dead' ? (
+          <div className="w-full py-16 px-4 text-center text-[#666]">
+            <p className="text-sm">This image is no longer on Swarm.</p>
+            <p className="text-xs mt-2">
+              The poster's postage stamp expired, so the chunks stopped being paid for and the
+              network dropped them. The thread and its comments are unaffected.
+            </p>
+            <p className="text-[10px] mt-3 font-mono break-all text-[#444]">{bzzhash}</p>
+          </div>
+        ) : imageStatus === 'checking' ? (
+          <div className="w-full h-[40vh] bg-[#212121] animate-pulse" />
+        ) : (
+          <img className="max-w-full max-h-[80vh]" src={imgSrc} alt="" />
+        )}
       </div>
 
       {/* Vote + Info bar */}

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useReadContract, useWatchContractEvent } from 'wagmi'
 import { PINKCHAINSAW_ABI, PINKCHAINSAW_ADDRESS } from '../config/contracts'
 import ThreadTile from './ThreadTile'
@@ -62,6 +62,21 @@ export default function ThreadList() {
     },
   })
 
+  // Posts whose image has expired from Swarm. The tiles hide themselves; this
+  // is only so the page can say so, because a grid that silently shrinks looks
+  // like a bug in the app rather than content that stopped being paid for.
+  const [expired, setExpired] = useState<Set<string>>(new Set())
+  const handleTileStatus = useCallback((threadId: string, alive: boolean) => {
+    setExpired(prev => {
+      const has = prev.has(threadId)
+      if (alive === !has) return prev
+      const next = new Set(prev)
+      if (alive) next.delete(threadId)
+      else next.add(threadId)
+      return next
+    })
+  }, [])
+
   const loaderRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -79,10 +94,17 @@ export default function ThreadList() {
     <div className="flex flex-wrap gap-1 p-1 justify-center">
       <UploadTile />
       {allThreadIds.map(threadId => (
-        <ThreadTile threadId={threadId} key={threadId} />
+        <ThreadTile threadId={threadId} key={threadId} onStatus={handleTileStatus} />
       ))}
       {!allLoaded && (
         <div ref={loaderRef} className="w-[128px] h-[128px] bg-[#212121] animate-pulse" />
+      )}
+      {allLoaded && expired.size > 0 && (
+        <p className="w-full text-center text-xs text-[#666] py-6">
+          {expired.size === allThreadIds.length
+            ? 'Every post here has expired from Swarm — their postage stamps ran out and the network dropped the images. Post something to start it off again.'
+            : `${expired.size} ${expired.size === 1 ? 'post is' : 'posts are'} hidden: their postage stamps expired and the images are no longer on Swarm.`}
+        </p>
       )}
     </div>
   )

@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { Bee } from '@ethersphere/bee-js'
 import type { PostageBatch, Topology } from '@ethersphere/bee-js'
-import { BEE_API_URL, BEE_GATEWAY_URL } from '../config/contracts'
+import { BEE_API_URL, BEE_GATEWAY_URL, PREFERRED_BATCH_ID } from '../config/contracts'
 
 export function useBee() {
   const [beeUrl, setBeeUrl] = useState(() => localStorage.getItem('bee-api-url') || BEE_API_URL)
@@ -40,9 +40,17 @@ export function useBee() {
     localBee.getAllPostageBatch()
       .then(batches => {
         setAllBatches(batches)
-        const usable = batches.find(b => b.usable)
-        if (usable) {
-          setBatchId(usable.batchID.toString())
+        // Prefer this app's own batch. Falling back to "first usable" is how
+        // uploads end up stamped by whatever batch happens to be first on a
+        // node that runs more than one thing — and when that batch lapses, the
+        // images go with it while the references stay on chain forever.
+        const preferred = batches.find(
+          b => b.usable && b.batchID.toString().replace(/^0x/, '') === PREFERRED_BATCH_ID,
+        )
+        const labelled = batches.find(b => b.usable && b.label?.startsWith('pinkchainsaw'))
+        const chosen = preferred ?? labelled ?? batches.find(b => b.usable)
+        if (chosen) {
+          setBatchId(chosen.batchID.toString())
         }
       })
       .catch(() => {})
