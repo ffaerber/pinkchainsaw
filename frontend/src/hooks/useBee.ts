@@ -1,7 +1,7 @@
 import { useEffect, useMemo } from 'react'
 import { Bee } from '@ethersphere/bee-js'
 import { useSwarmConnect } from '@ffaerber/swarm-connect'
-import { BEE_GATEWAY_URL, PREFERRED_BATCH_ID } from '../config/contracts'
+import { BEE_GATEWAY_URL, PINKCHAINSAW_ADDRESS, PREFERRED_BATCH_ID } from '../config/contracts'
 
 /**
  * Adapter between @ffaerber/swarm-connect and the rest of the app.
@@ -16,8 +16,16 @@ import { BEE_GATEWAY_URL, PREFERRED_BATCH_ID } from '../config/contracts'
 export function useBee() {
   const swarm = useSwarmConnect({
     // Posting costs xDAI for gas and xBZZ for fees, and uploading needs a
-    // stamp. The node's own wallet is not used: this app never buys stamps.
-    requirements: { xdai: true, xbzz: true, nodeWallet: false, postageStamp: true },
+    // stamp. The contract pulls the fees itself, so it also needs an allowance
+    // — without one the upload tile and the comment box quietly disable
+    // themselves. The node's own wallet is not used: this app never buys stamps.
+    requirements: {
+      xdai: true,
+      xbzz: true,
+      xbzzAllowance: { spender: PINKCHAINSAW_ADDRESS },
+      nodeWallet: false,
+      postageStamp: true,
+    },
   })
 
   const { beeApiUrl, beeNode, stamps } = swarm

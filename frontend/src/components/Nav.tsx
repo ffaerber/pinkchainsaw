@@ -1,5 +1,4 @@
 import { Link } from 'react-router'
-import ApproveBzz from './ApproveBzz'
 
 export default function Nav({ onConnectClick }: { onConnectClick: () => void }) {
   return (
@@ -16,8 +15,6 @@ export default function Nav({ onConnectClick }: { onConnectClick: () => void }) 
       </Link>
 
       <div className="flex-1" />
-
-      <ApproveBzz />
 
       <button
         onClick={onConnectClick}
