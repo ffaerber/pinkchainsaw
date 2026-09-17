@@ -4,11 +4,11 @@
 
 A decentralized imageboard on Gnosis Chain with Ethereum Swarm storage.
 
-Users post images, comment, and vote using xBZZ tokens. Fees from posts and comments automatically top up the poster's Swarm postage stamp, keeping content alive on the network. A social score system rewards good content with lower fees and penalizes bad content with higher fees. Anyone can browse all content via a public Swarm gateway without a wallet.
+Users post images, comment, and vote using xBZZ tokens. Every fee tops up the Swarm postage batch of the content being replied to or voted on, so engagement is what keeps a post alive — and a post outlives its author for as long as people keep interacting with it. A reputation system rewards well received content with lower posting fees and penalizes badly received content with higher ones. Anyone can browse all content via a public Swarm gateway without a wallet.
 
 ## Architecture
 
-- **Smart Contract**: Solidity 0.8.20, built with Foundry
+- **Smart Contract**: Solidity 0.8.28 (UUPS upgradeable), built with Foundry
 - **Frontend**: React 19 + TypeScript + Vite SPA (hash router for Swarm hosting)
 - **Chain**: Gnosis Chain (xDAI for gas, xBZZ for fees)
 - **Storage**: Ethereum Swarm (images + comment text)
@@ -17,15 +17,110 @@ Users post images, comment, and vote using xBZZ tokens. Fees from posts and comm
 
 ## How Fees Work
 
-| Action | Fee destination |
-|---|---|
-| Create thread | Tops up poster's postage stamp |
-| Create comment | Tops up commenter's postage stamp |
-| Upvote / Downvote | Sent to post owner |
+Fees are paid in xBZZ, and mostly land in a Swarm postage batch rather than anyone's wallet: the rule
+is that **engagement funds the storage of the content being engaged with**, so a post outlives its
+author for as long as people keep interacting with it. The two exceptions, both described below, are
+the project's wallet share and the signup fee.
 
-Fees are calculated based on social score: higher score = lower fees (1x-5x multiplier).
+| Action | Fee | Tops up |
+|---|---|---|
+| Create thread | scaled by reputation | the Pink Chainsaw batch, which hosts the frontend |
+| Comment or reply | scaled by reputation | the batch of the post being replied to |
+| Reply to yourself | scaled by reputation | the Pink Chainsaw batch |
+| Upvote / downvote | flat, same for everyone | the batch of the post being voted on |
 
-By routing post/comment fees into the Swarm PostageStamp contract, content stays alive on the network as long as users keep interacting.
+The project takes a share of every fee, in two forms: one to the Pink Chainsaw **batch**, so the
+frontend keeps paying for its own hosting, and one to the Pink Chainsaw **wallet**, in spendable
+tokens. Both sit under a single ceiling of `MAX_PROJECT_BPS` (20%), so what the project takes off the
+top is one number rather than two that could each be raised. The batch share defaults to 10%; the
+wallet share starts at zero and only applies once the owner sets both it and a wallet.
+
+The wallet share comes out of the existing fee rather than being added to it, so enabling it does not
+make anything more expensive — it only splits the same fee differently. It applies to votes as well
+as posts, so unlike the signup fee it keeps earning on a board that is busy without being new.
+
+### Changing the base fee
+
+Every fee derives from `bzzFee`, which the owner can change within absolute bounds of `MIN_BZZ_FEE`
+and `MAX_BZZ_FEE`, a hundredfold either side of the launch value. The range runs in both directions
+on purpose: fees are denominated in BZZ, so if BZZ appreciates sharply the fee has to come *down* to
+keep posting affordable, and if it falls the fee can come up.
+
+The bounds are absolute rather than a multiple of the current fee, because a relative bound can be
+walked anywhere by repeated calls and so guarantees nothing.
+
+### The signup fee
+
+Postage credit keeps content alive but cannot pay a bill. Renewing the ENS name costs ETH on
+mainnet, so the project needs some income it can actually spend. An author's **first post** pays a
+one-off signup fee in xBZZ to the Pink Chainsaw wallet, on top of the posting fee itself.
+
+It is charged once per address, never on votes, and skipped entirely until the owner has set a
+wallet and an amount. The amount is capped at `MAX_SIGNUP_FEE_MULTIPLE` times the base fee so the
+entry price cannot be raised far enough to shut newcomers out without a contract upgrade.
+
+It doubles as the first real cost of creating an identity. Everything else in the system is cheap
+enough that throwaway accounts are free, which is what makes vote griefing affordable.
+
+Voting is a flat price for everyone, so a well reputed account cannot vote, or grief, more cheaply
+than a new one. Posting scales with how an author's content has been received, between 1x and 5x of
+the base fee.
+
+### How the posting multiplier is calculated
+
+The multiplier comes from the **ratio** of upvotes to total votes an author has received, not from
+the net score, and the ratio is smoothed by a prior of five imaginary votes each way:
+
+```
+ratio = (upvotes + 5) / (upvotes + downvotes + 10)
+```
+
+A ratio of 25% or worse pays 5x, 75% or better pays 1x, and it moves continuously in between.
+
+| Author | Ratio | Multiplier |
+|---|---|---|
+| brand new | 50% | 3.00x |
+| 2 downvotes, no upvotes | 42% | 3.67x |
+| 10 downvotes, no upvotes | 25% | 5.00x |
+| 10 upvotes, no downvotes | 75% | 1.00x |
+| 1000 upvotes, 5 downvotes | 99% | 1.00x |
+| 1000 upvotes, 995 downvotes | 50% | 3.00x |
+
+Two things this gets right that a net score cannot. **Standing is proportional**: five downvotes are
+nothing to an author with a thousand upvotes, but meaningful for someone with none — and an
+established author needs hundreds of downvotes, not two, before their fee moves at all. **A newcomer
+cannot be priced off the board**: the prior keeps a barely voted author near neutral, so two
+strangers can no longer put someone on the dearest fee on their first day, which under a net score
+they could — and the only way back was to post at that fee.
+
+It also means volume alone buys nothing. An author with 1000 upvotes and 995 downvotes scored +5 on
+the old net score and paid the cheapest rate despite half their content being rejected; on the ratio
+they pay the neutral rate.
+
+Two consequences worth stating plainly. A downvote costs the voter but is never income for its
+target — it buys them storage time, nothing spendable — so inflammatory content cannot be farmed for
+profit. And content nobody engages with is not topped up by anyone, so it eventually expires, which
+is the intended outcome rather than a failure.
+
+A fee never blocks the interaction it belongs to. If the batch a fee was meant for has expired, does
+not exist, or is too deep for the amount to survive rounding, that share goes to the Pink Chainsaw
+batch instead, and anything that still cannot be placed is returned to the payer. An author who
+disappears can never make their own thread uncommentable.
+
+Each address may cast one vote per post. A vote can be flipped from up to down or back, which
+costs another fee and moves the rating by two, but the same vote cannot be repeated.
+
+### Registering your batch
+
+Your first post registers the postage batch that holds your content, and it stays bound to you until
+you rotate it with `setBatchId`. That registry is what lets other people's fees find your batch when
+they reply to or vote on your posts.
+
+The binding is needed because neither half of the obvious ownership check exists on chain. The Swarm
+PostageStamp contract lets anyone top up any batch — which is exactly what makes this design possible
+— and a batch is owned by your Bee node's address rather than by your wallet, so the contract cannot
+ask whether a batch is yours. Without the binding, a client could pass any batch id it liked and
+quietly point other people's fees at storage you don't own.
 
 ## Read vs Write
 
@@ -47,9 +142,11 @@ If a local Bee node is connected, reads go through it (faster). Otherwise the pu
 - Auto chain-switch prompt to Gnosis Chain
 - Create image threads (uploaded to Swarm, referenced on-chain)
 - Nested comments with threaded replies
-- Upvote / downvote with xBZZ token fees
-- Social score system (higher score = lower fees)
-- Automatic postage stamp top-up from fees
+- Upvote / downvote with a flat xBZZ fee
+- Reputation system: posting fees scale with an author's smoothed approval ratio
+- Fees top up the postage stamp of the content being engaged with, so popular content stays alive
+- One-off signup fee on an author's first post, plus an optional share of every fee, as the project's spendable income
+- Base fee retunable within fixed bounds, so a rising BZZ price cannot price the board out
 - ENS name resolution for addresses
 - Live updates via contract event watching (no page reload needed)
 - Dark UI with dense tile grid and pink accent
@@ -58,7 +155,7 @@ If a local Bee node is connected, reads go through it (faster). Otherwise the pu
 
 | Contract | Address |
 |---|---|
-| Pinkchainsaw | `0xFe73D7bBA8A6228Aa3Aa4f955A1031eb0E83f90e` |
+| Pinkchainsaw (ERC1967 proxy) | `0x95cBdd7d64040C101240c93fc7B55EC6c2679368` |
 | BZZ Token (xBZZ) | `0xdBF3Ea6F5beE45c02255B2c26a16F300502F68da` |
 | PostageStamp (Swarm) | `0x45a1502382541Cd610CC9068e88727426b696293` |
 
@@ -88,7 +185,10 @@ make anvil
 # Terminal 2: fund wallets + deploy contract
 make anvil-init
 
-# Terminal 3: start frontend dev server
+# Terminal 3: point the frontend at the local deployment, then start the dev server
+cp frontend/.env.example frontend/.env   # set VITE_CONTRACT_ADDRESS to the address
+                                         # printed by anvil-init, VITE_RPC_URL to
+                                         # http://localhost:8545
 make dev
 ```
 
@@ -99,6 +199,22 @@ make dev
 ```bash
 make deploy-contract        # Deploy to Gnosis Chain (uses .env MNEMONIC)
 make verify-contract CONTRACT=0x...  # Verify on Blockscout
+```
+
+After deploying — or after upgrading an existing proxy, where the new storage starts empty — the
+owner has to register the project batch, otherwise fees have nowhere to go and posting is free:
+
+```bash
+cast send <proxy> "setPinkchainsawBatchId(bytes32)" 0x<batch-id> --rpc-url $RPC_URL --mnemonic "$MNEMONIC"
+cast send <proxy> "setProjectBps(uint256)" 1000 --rpc-url $RPC_URL --mnemonic "$MNEMONIC"   # upgrades only
+
+# Optional: the signup fee, which is the only income the project can spend
+cast send <proxy> "setPinkchainsawWallet(address)" 0x<wallet> --rpc-url $RPC_URL --mnemonic "$MNEMONIC"
+cast send <proxy> "setSignupFee(uint256)" 20000000000000 --rpc-url $RPC_URL --mnemonic "$MNEMONIC"
+cast send <proxy> "setWalletBps(uint256)" 500 --rpc-url $RPC_URL --mnemonic "$MNEMONIC"          # 5% of every fee
+
+# Retune the base fee as the BZZ price moves, within MIN_BZZ_FEE and MAX_BZZ_FEE
+cast send <proxy> "setBzzFee(uint256)" 10000000000000 --rpc-url $RPC_URL --mnemonic "$MNEMONIC"
 ```
 
 ### Frontend
@@ -139,9 +255,9 @@ make anvil-init             # Fund wallets + deploy contract to local Anvil
 make dev                    # Start frontend dev server
 
 # Testing
-make test                   # Run unit tests
-make test-fork              # Run all tests against Gnosis Chain fork
-make test-unit              # Run only unit tests (no fork)
+make test                   # Run all tests (forks Gnosis Chain at the pinned block)
+make test-fork              # Same, with the fork url and block passed explicitly
+make test-unit              # Run only the Pinkchainsaw test contract (still forks)
 make test-gas               # Run tests with gas report
 make coverage               # Run test coverage
 
@@ -173,12 +289,14 @@ pinkchainsaw/
 ├── src/
 │   └── Pinkchainsaw.sol              # Main contract (threads, comments, votes, stamp top-up)
 ├── test/
-│   └── Pinkchainsaw.t.sol            # Fork tests against Gnosis Chain (20 tests)
+│   ├── Pinkchainsaw.t.sol            # Fork tests against Gnosis Chain (70 tests across two suites)
+│   ├── FeeRouting.t.sol              # Fee destinations and fallbacks, against mocks
+│   └── mocks/Mocks.sol               # Mock BZZ + PostageStamp
 ├── frontend/
 │   ├── src/
 │   │   ├── components/               # Nav, ThreadList, ThreadTile, UploadTile,
 │   │   │                             # ThreadDetails, CommentItem, EnsName, Modal, ChainGuard
-│   │   ├── hooks/                    # useBee, BeeContext
+│   │   ├── hooks/                    # useBee, BeeContext, usePostingBatch
 │   │   ├── config/                   # wagmi, contract addresses + ABIs
 │   │   └── abi/                      # Contract ABI (from forge build)
 │   └── index.html
@@ -191,7 +309,7 @@ pinkchainsaw/
 
 | Layer | Technology |
 |---|---|
-| Smart Contracts | Solidity 0.8.20, Foundry |
+| Smart Contracts | Solidity 0.8.28, Foundry |
 | Frontend | React 19, TypeScript, Vite, Tailwind CSS 4 |
 | Web3 | wagmi v2, viem |
 | Swarm SDK | @ethersphere/bee-js v11 |

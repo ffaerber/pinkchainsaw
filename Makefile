@@ -6,8 +6,13 @@ export
 BEE_API_URL    ?= http://localhost:1633
 RPC_URL        ?= https://rpc.gnosischain.com
 LOCAL_RPC_URL  ?= http://localhost:8545
-ETH_RPC_URL    ?= https://mainnet.ffaerber.duckdns.org
+# Mainnet, used only for the ENS content hash update. Deliberately not named ETH_RPC_URL:
+# that name is picked up by forge/cast and by anvil-init.sh as a default endpoint.
+MAINNET_RPC_URL ?= https://mainnet.ffaerber.duckdns.org
 ENS_NAME       ?= pinkchainsaw.eth
+# Keep in sync with fork_block_number in foundry.toml. The tests rely on a postage batch
+# that exists at this block, so an unpinned run against latest can fail.
+FORK_BLOCK      = 45615500
 ENS_REGISTRY    = 0x00000000000C2E074eC69A0dFb2997BA6C7d2e1e
 BZZ_TOKEN       = 0xdBF3Ea6F5beE45c02255B2c26a16F300502F68da
 POSTAGE_STAMP   = 0x45a1502382541Cd610CC9068e88727426b696293
@@ -54,16 +59,18 @@ dev-all: ## Start Anvil, init, and frontend (run in separate terminals)
 #  Testing
 # ============================================================
 
+# Every test forks Gnosis Chain: foundry.toml pins eth_rpc_url and fork_block_number, and
+# the suite reads live BZZ and PostageStamp state. There is no offline test path.
 .PHONY: test
-test: ## Run unit tests
+test: ## Run all tests (forks Gnosis Chain at the pinned block)
 	forge test -vvv
 
 .PHONY: test-fork
-test-fork: ## Run all tests against Gnosis Chain fork
-	forge test --fork-url $(RPC_URL) -vvv
+test-fork: ## Run all tests against Gnosis Chain at the pinned fork block
+	forge test --fork-url $(RPC_URL) --fork-block-number $(FORK_BLOCK) -vvv
 
 .PHONY: test-unit
-test-unit: ## Run only unit tests (no fork)
+test-unit: ## Run only the Pinkchainsaw test contract (still forks)
 	forge test --match-contract PinkchainsawTest -vvv
 
 .PHONY: test-gas
@@ -157,7 +164,7 @@ update-ens: ## Update ENS content hash on mainnet (SWARM_HASH=...)
 	@NAMEHASH=$$(cast namehash $(ENS_NAME)) && \
 	RESOLVER=$$(cast call $(ENS_REGISTRY) \
 		"resolver(bytes32)(address)" $$NAMEHASH \
-		--rpc-url $(ETH_RPC_URL)) && \
+		--rpc-url $(MAINNET_RPC_URL)) && \
 	CONTENT_HASH=0x$$(python3 -c "print('e40101fa011b20' + '$(SWARM_HASH)')") && \
 	echo "Updating $(ENS_NAME) content hash..." && \
 	echo "  Resolver: $$RESOLVER" && \
@@ -165,7 +172,7 @@ update-ens: ## Update ENS content hash on mainnet (SWARM_HASH=...)
 	cast send $$RESOLVER \
 		"setContenthash(bytes32,bytes)" $$NAMEHASH $$CONTENT_HASH \
 		--mnemonic "$(MNEMONIC)" \
-		--rpc-url $(ETH_RPC_URL) && \
+		--rpc-url $(MAINNET_RPC_URL) && \
 	echo "" && \
 	echo "ENS updated! Live at:" && \
 	echo "  https://$(ENS_NAME).bzz.link" && \

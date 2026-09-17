@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react'
 import { createPublicClient, http } from 'viem'
 import { mainnet } from 'viem/chains'
+import { ENS_RPC_URL } from '../config/contracts'
 
 const ensClient = createPublicClient({
   chain: mainnet,
-  transport: http('https://eth.llamarpc.com'),
+  transport: http(ENS_RPC_URL),
 })
 
 const cache = new Map<string, string | null>()

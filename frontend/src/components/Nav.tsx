@@ -1,4 +1,5 @@
 import { Link } from 'react-router'
+import PostingBatch from './PostingBatch'
 
 export default function Nav({ onConnectClick }: { onConnectClick: () => void }) {
   return (
@@ -15,6 +16,8 @@ export default function Nav({ onConnectClick }: { onConnectClick: () => void }) 
       </Link>
 
       <div className="flex-1" />
+
+      <PostingBatch />
 
       <button
         onClick={onConnectClick}
