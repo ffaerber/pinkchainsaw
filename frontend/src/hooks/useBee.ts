@@ -1,77 +1,66 @@
-import { useState, useEffect, useMemo, useCallback } from 'react'
+import { useEffect, useMemo } from 'react'
 import { Bee } from '@ethersphere/bee-js'
-import type { PostageBatch, Topology } from '@ethersphere/bee-js'
-import { BEE_API_URL, BEE_GATEWAY_URL } from '../config/contracts'
+import { useSwarmConnect } from '@ffaerber/swarm-connect'
+import { BEE_GATEWAY_URL, PINKCHAINSAW_ADDRESS, PREFERRED_BATCH_ID } from '../config/contracts'
 
+/**
+ * Adapter between @ffaerber/swarm-connect and the rest of the app.
+ *
+ * swarm-connect owns everything about reaching Swarm: which Bee node, whether it
+ * is up, which postage stamp, and the wallet checks in front of them. This hook
+ * turns that into what the components here hold — a reader, a writer, a URL for
+ * <img src>, and a batch — and nothing else. It is the single instance of
+ * useSwarmConnect in the app, so the connect modal and the upload paths look at
+ * the same state rather than two copies of it.
+ *
+ * `allBatches` stays on the surface because usePostingBatch needs it: the
+ * contract binds an author to one batch, and it has to know whether the
+ * registered batch is actually on this node before letting a post through.
+ */
 export function useBee() {
-  const [beeUrl, setBeeUrl] = useState(() => localStorage.getItem('bee-api-url') || BEE_API_URL)
-  const localBee = useMemo(() => new Bee(beeUrl), [beeUrl])
+  const swarm = useSwarmConnect({
+    // Posting costs xDAI for gas and xBZZ for fees, uploading needs a stamp, and
+    // the contract pulls the fees itself, so it also needs an allowance.
+    // The node's own wallet is not used: this app never buys stamps.
+    requirements: {
+      xdai: true,
+      xbzz: true,
+      xbzzAllowance: { spender: PINKCHAINSAW_ADDRESS },
+      nodeWallet: false,
+      postageStamp: true,
+    },
+  })
+
+  const { beeApiUrl, beeNode, stamps } = swarm
+  const isConnected = beeNode.isRunning
+
+  const localBee = useMemo(() => new Bee(beeApiUrl), [beeApiUrl])
   const gatewayBee = useMemo(() => new Bee(BEE_GATEWAY_URL), [])
 
-  const updateBeeUrl = useCallback((url: string) => {
-    localStorage.setItem('bee-api-url', url)
-    setBeeUrl(url)
-  }, [])
-
-  const [batchId, setBatchId] = useState<string | null>(null)
-  const [allBatches, setAllBatches] = useState<PostageBatch[]>([])
-  const [topology, setTopology] = useState<Topology | null>(null)
-  const [isConnected, setIsConnected] = useState(false)
-
-  // Check local Bee node health (with timeout to avoid hanging on mixed-content blocks)
+  // Default to this app's batch when the node has it and the user has not chosen
+  // otherwise. It decides which batch a first post registers on chain — and that
+  // binding is durable, so "whichever batch the node listed first" is a poor
+  // default on a node that runs more than one service.
   useEffect(() => {
-    let cancelled = false
-    let timer: ReturnType<typeof setTimeout> | undefined
-    const timeout = new Promise<never>((_, reject) => {
-      timer = setTimeout(() => reject(new Error('timeout')), 3000)
-    })
-    Promise.race([localBee.isConnected(), timeout])
-      .then(connected => { if (!cancelled) setIsConnected(connected) })
-      .catch(() => { if (!cancelled) setIsConnected(false) })
-      .finally(() => clearTimeout(timer))
-    return () => { cancelled = true; clearTimeout(timer) }
-  }, [localBee])
-
-  // Fetch topology from local node
-  useEffect(() => {
-    if (!isConnected) return
-    localBee.getTopology()
-      .then(setTopology)
-      .catch(() => {})
-  }, [localBee, isConnected])
-
-  // Fetch postage batches from local node
-  useEffect(() => {
-    if (!isConnected) return
-    localBee.getAllPostageBatch()
-      .then(batches => {
-        setAllBatches(batches)
-        const usable = batches.find(b => b.usable)
-        if (usable) {
-          setBatchId(usable.batchID.toString())
-        }
-      })
-      .catch(() => {})
-  }, [localBee, isConnected])
-
-  const selectBatch = (id: string) => {
-    setBatchId(id)
-  }
+    if (stamps.selectedStampId || stamps.stamps.length === 0) return
+    const preferred = stamps.stamps.find(
+      s => s.batchID.replace(/^0x/, '') === PREFERRED_BATCH_ID && s.usable,
+    )
+    if (preferred) stamps.selectStamp(preferred.batchID)
+  }, [stamps])
 
   return {
-    // Read: use local node if connected, otherwise fall back to public gateway
+    // The shared connect state, for the modal in App.tsx.
+    swarm,
+    // Read through the local node when it is up, the public gateway otherwise.
     reader: isConnected ? localBee : gatewayBee,
-    // Write: always local node (requires BZZ postage stamps)
+    // Writes always need the local node: uploads are stamped there.
     writer: localBee,
-    // Read base URL for <img src> tags
-    readUrl: isConnected ? beeUrl : BEE_GATEWAY_URL,
-    beeUrl,
-    updateBeeUrl,
-    batchId,
-    allBatches,
-    topology,
+    // Base URL for <img src> tags.
+    readUrl: isConnected ? beeApiUrl : BEE_GATEWAY_URL,
+    batchId: stamps.selectedStampId ?? null,
+    allBatches: stamps.stamps,
+    selectBatch: stamps.selectStamp,
     isConnected,
-    peerCount: topology?.connected ?? 0,
-    selectBatch,
   }
 }

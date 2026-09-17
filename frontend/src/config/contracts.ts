@@ -49,6 +49,14 @@ export const ERC20_ABI = [
   },
 ] as const
 
+// The batch a first post registers on chain when the author has none yet.
+// Without it the app takes the first usable batch the node reports, which on a
+// node running other services can be any of them — and the author is then bound
+// to a batch that has nothing to do with this app (the contract binds one batch
+// per author; see usePostingBatch). Users can still pick another in the connect
+// modal before their first post.
+export const PREFERRED_BATCH_ID = '35b2db745f578fff78009be8f87c253f73272d179c66d0020710bbc1d1a9e517'
+
 export const BEE_GATEWAY_URL = import.meta.env.VITE_BEE_GATEWAY_URL || 'https://api.gateway.ethswarm.org'
 export const BEE_API_URL = import.meta.env.VITE_BEE_API_URL || 'http://localhost:1633'
 export const ENS_RPC_URL = import.meta.env.VITE_ENS_RPC_URL || 'https://eth.llamarpc.com'
