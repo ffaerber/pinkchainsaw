@@ -6,6 +6,7 @@ import { PINKCHAINSAW_ABI, PINKCHAINSAW_ADDRESS, BZZ_TOKEN_ADDRESS, ERC20_ABI } 
 import { useBeeContext } from '../hooks/BeeContext'
 import { usePostingBatch } from '../hooks/usePostingBatch'
 import { txErrorMessage } from '../lib/errors'
+import UploadPreviewModal from './UploadPreviewModal'
 
 export default function UploadTile() {
   const { isConnected, address } = useAccount()
@@ -29,9 +30,19 @@ export default function UploadTile() {
     if (isSuccess) { toast.success('Thread created!'); refetchRegisteredBatch() }
   }, [isSuccess, refetchRegisteredBatch])
 
-  const onDrop = useCallback(async (acceptedFiles: File[]) => {
+  // Picking a file no longer starts an upload. It opens the preview, which is
+  // where the image is re-encoded and where the last look happens -- a post is
+  // public and permanent once the bytes are on Swarm.
+  const [picked, setPicked] = useState<File | null>(null)
+
+  const onDrop = useCallback((acceptedFiles: File[]) => {
     const file = acceptedFiles[0]
     if (!file || !batchId) return
+    setPicked(file)
+  }, [batchId])
+
+  const upload = useCallback(async (file: File) => {
+    if (!batchId) return
     setUploading(true)
     try {
       toast('Uploading to Swarm...')
@@ -48,6 +59,7 @@ export default function UploadTile() {
         functionName: 'createThread',
         args: [`0x${reference}`, `0x${batchId}`],
       })
+      setPicked(null)
     } catch (e) {
       toast.error(`Upload failed: ${txErrorMessage(e)}`)
     } finally {
@@ -61,11 +73,20 @@ export default function UploadTile() {
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
     multiple: false,
-    disabled: !enabled,
+    disabled: !enabled || !!picked,
     accept: { 'image/jpeg': [], 'image/png': [], 'image/gif': [], 'image/webp': [] },
   })
 
   return (
+    <>
+    {picked && (
+      <UploadPreviewModal
+        file={picked}
+        uploading={busy}
+        onCancel={() => setPicked(null)}
+        onConfirm={upload}
+      />
+    )}
     <div
       {...getRootProps()}
       className={`w-[128px] h-[128px] border-2 border-dashed rounded flex items-center justify-center transition-colors ${
@@ -83,5 +104,6 @@ export default function UploadTile() {
         <line x1="12" y1="3" x2="12" y2="15" />
       </svg>
     </div>
+    </>
   )
 }
