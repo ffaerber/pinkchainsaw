@@ -59,4 +59,9 @@ export const PREFERRED_BATCH_ID = '35b2db745f578fff78009be8f87c253f73272d179c66d
 
 export const BEE_GATEWAY_URL = import.meta.env.VITE_BEE_GATEWAY_URL || 'https://api.gateway.ethswarm.org'
 export const BEE_API_URL = import.meta.env.VITE_BEE_API_URL || 'http://localhost:1633'
-export const ENS_RPC_URL = import.meta.env.VITE_ENS_RPC_URL || 'https://eth.llamarpc.com'
+// llamarpc stopped answering browsers: its CORS preflight returns 525 (a TLS
+// failure at its edge), so every ENS lookup fails with "Failed to fetch" and
+// viem retries it three times per mount -- which is most of what fills the
+// console on a thread page. publicnode answers the preflight and resolves.
+// Point VITE_ENS_RPC_URL at your own mainnet node if you run one.
+export const ENS_RPC_URL = import.meta.env.VITE_ENS_RPC_URL || 'https://ethereum-rpc.publicnode.com'
