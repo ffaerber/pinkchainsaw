@@ -6,8 +6,14 @@ export const BZZ_TOKEN_ADDRESS = '0xdBF3Ea6F5beE45c02255B2c26a16F300502F68da' as
 export const BZZ_DECIMALS = 16
 
 // Deployed proxy on Gnosis Chain. Override for local Anvil runs via frontend/.env
+//
+// Replaced 0x95cBdd7d64040C101240c93fc7B55EC6c2679368 on 2026-09-18. That proxy ran an
+// implementation built from commit 27600d1, nine commits behind this repo, so
+// getVote, getBatchId and setBatchId -- all called from here -- reverted on
+// every use. The board had no content worth migrating, so it was redeployed
+// rather than upgraded.
 export const PINKCHAINSAW_ADDRESS = (import.meta.env.VITE_CONTRACT_ADDRESS
-  || '0x95cBdd7d64040C101240c93fc7B55EC6c2679368') as `0x${string}`
+  || '0x898FA415eBc9ABF866FA0668a07Fe1c9032A3897') as `0x${string}`
 
 export const PINKCHAINSAW_ABI = pinkchainsawAbi as readonly any[]
 
@@ -59,4 +65,9 @@ export const PREFERRED_BATCH_ID = '35b2db745f578fff78009be8f87c253f73272d179c66d
 
 export const BEE_GATEWAY_URL = import.meta.env.VITE_BEE_GATEWAY_URL || 'https://api.gateway.ethswarm.org'
 export const BEE_API_URL = import.meta.env.VITE_BEE_API_URL || 'http://localhost:1633'
-export const ENS_RPC_URL = import.meta.env.VITE_ENS_RPC_URL || 'https://eth.llamarpc.com'
+// llamarpc stopped answering browsers: its CORS preflight returns 525 (a TLS
+// failure at its edge), so every ENS lookup fails with "Failed to fetch" and
+// viem retries it three times per mount -- which is most of what fills the
+// console on a thread page. publicnode answers the preflight and resolves.
+// Point VITE_ENS_RPC_URL at your own mainnet node if you run one.
+export const ENS_RPC_URL = import.meta.env.VITE_ENS_RPC_URL || 'https://ethereum-rpc.publicnode.com'

@@ -27,6 +27,9 @@ export default function CommentItem({ commentId, depth }: CommentItemProps) {
   })
   const canWrite = !!address && !!batchId && bzzAllowance && (bzzAllowance as bigint) > 0n
 
+  // Same two contract rules as on a thread: a comment that is not on chain yet
+  // cannot be voted on, and nobody may vote on their own. See ThreadDetails.
+
   const { data: comment, refetch } = useReadContract({
     address: PINKCHAINSAW_ADDRESS,
     abi: PINKCHAINSAW_ABI,
@@ -35,6 +38,13 @@ export default function CommentItem({ commentId, depth }: CommentItemProps) {
   })
 
   const post = comment as any
+  const onChain = !!post?.exists
+  const isOwnPost = !!address && !!post?.owner
+    && (post.owner as string).toLowerCase() === address.toLowerCase()
+  const canVote = canWrite && onChain && !isOwnPost
+  const voteBlockedReason = !onChain
+    ? 'waiting for this comment to be confirmed on chain'
+    : isOwnPost ? 'you cannot vote on your own comment' : ''
 
   // Download comment text from Swarm
   const [commentText, setCommentText] = useState('')
@@ -58,6 +68,10 @@ export default function CommentItem({ commentId, depth }: CommentItemProps) {
 
   // Refresh when anyone votes on or replies to this comment
   useWatchContractEvent({
+    // Poll with eth_getLogs instead of eth_newFilter: the public Gnosis RPC
+    // rejects filter creation with a 400, which surfaced as a console full of
+    // failed POSTs to rpc.gnosischain.com on every mount.
+    poll: true,
     address: PINKCHAINSAW_ADDRESS,
     abi: PINKCHAINSAW_ABI,
     eventName: 'CommentUpdated',
@@ -77,6 +91,7 @@ export default function CommentItem({ commentId, depth }: CommentItemProps) {
   }, [voteSuccess, refetch, refetchVote])
 
   const handleVote = (fn: 'upVote' | 'downVote') => {
+    if (!canVote) return
     writeVote({
       address: PINKCHAINSAW_ADDRESS,
       abi: PINKCHAINSAW_ABI,
@@ -137,17 +152,17 @@ export default function CommentItem({ commentId, depth }: CommentItemProps) {
         <div className="flex items-center gap-3 mt-1 pb-2 border-b border-[#252525] text-xs text-[#888]">
           <button
             onClick={() => handleVote('upVote')}
-            disabled={!canWrite || votePending || castVote === 1}
-            title={castVote === 1 ? 'already upvoted' : 'upvote'}
-            className={castVote === 1 ? 'text-[#e84393]' : canWrite && !votePending ? 'hover:text-[#e84393] cursor-pointer' : 'text-[#444] cursor-not-allowed'}
+            disabled={!canVote || votePending || castVote === 1}
+            title={voteBlockedReason || (castVote === 1 ? 'already upvoted' : 'upvote')}
+            className={castVote === 1 ? 'text-[#e84393]' : canVote && !votePending ? 'hover:text-[#e84393] cursor-pointer' : 'text-[#444] cursor-not-allowed'}
           >
             +
           </button>
           <button
             onClick={() => handleVote('downVote')}
-            disabled={!canWrite || votePending || castVote === -1}
-            title={castVote === -1 ? 'already downvoted' : 'downvote'}
-            className={castVote === -1 ? 'text-[#f2f5f4]' : canWrite && !votePending ? 'hover:text-[#f2f5f4] cursor-pointer' : 'text-[#444] cursor-not-allowed'}
+            disabled={!canVote || votePending || castVote === -1}
+            title={voteBlockedReason || (castVote === -1 ? 'already downvoted' : 'downvote')}
+            className={castVote === -1 ? 'text-[#f2f5f4]' : canVote && !votePending ? 'hover:text-[#f2f5f4] cursor-pointer' : 'text-[#444] cursor-not-allowed'}
           >
             -
           </button>

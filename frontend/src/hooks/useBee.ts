@@ -31,10 +31,18 @@ export function useBee() {
     },
   })
 
-  const { beeApiUrl, beeNode, stamps } = swarm
+  const { beeApiUrl, beeApiKey, beeNode, stamps } = swarm
   const isConnected = beeNode.isRunning
 
-  const localBee = useMemo(() => new Bee(beeApiUrl), [beeApiUrl])
+  // The key has to come with the client, not just with swarm-connect's own
+  // probes: this Bee instance is what uploads, and a bee-manager answers an
+  // unauthenticated POST /bzz with 401. A bare Bee node wants no header at
+  // all, so it is omitted when there is no key rather than sent empty --
+  // a custom header would force a CORS preflight a plain node need not answer.
+  const localBee = useMemo(
+    () => new Bee(beeApiUrl, beeApiKey ? { headers: { 'x-api-key': beeApiKey } } : undefined),
+    [beeApiUrl, beeApiKey],
+  )
   const gatewayBee = useMemo(() => new Bee(BEE_GATEWAY_URL), [])
 
   // Default to this app's batch when the node has it and the user has not chosen
