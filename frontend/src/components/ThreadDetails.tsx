@@ -32,6 +32,29 @@ export default function ThreadDetails() {
 
   const post = thread as any
   const bzzhash = post?.bzzhash ? (post.bzzhash as string).replace('0x', '') : ''
+
+  /**
+   * The two rules the contract enforces on a vote, mirrored here so a click
+   * cannot become a transaction that is certain to revert.
+   *
+   *   upVote on a thread that is not on chain yet -> "thread or comment
+   *   doesn't exist". Reachable because this page renders from a pending
+   *   createThread: the id is known as soon as the upload succeeds, minutes
+   *   before the transaction mines.
+   *
+   *   upVote on your own post -> "cannot vote on own post". Permanently true
+   *   for the author, and the buttons were live for them anyway.
+   *
+   * Both cost real gas to discover, and the wallet shows only a failed
+   * transaction afterwards.
+   */
+  const onChain = !!post?.exists
+  const isOwnPost = !!address && !!post?.owner
+    && (post.owner as string).toLowerCase() === address.toLowerCase()
+  const canVote = canWrite && onChain && !isOwnPost
+  const voteBlockedReason = !onChain
+    ? 'waiting for this post to be confirmed on chain'
+    : isOwnPost ? 'you cannot vote on your own post' : ''
   const imgSrc = bzzhash ? `${readUrl}/bzz/${bzzhash}` : ''
   const imageStatus = useBzzStatus(readUrl, bzzhash || undefined)
 
@@ -70,7 +93,7 @@ export default function ThreadDetails() {
   }, [voteSuccess, refetch, refetchVote])
 
   const handleVote = (fn: 'upVote' | 'downVote') => {
-    if (!threadId) return
+    if (!threadId || !canVote) return
     writeVote({
       address: PINKCHAINSAW_ADDRESS,
       abi: PINKCHAINSAW_ABI,
@@ -146,18 +169,18 @@ export default function ThreadDetails() {
         <div className="flex items-center gap-1">
           <button
             onClick={() => handleVote('upVote')}
-            disabled={!canWrite || votePending || castVote === 1}
-            title={castVote === 1 ? 'already upvoted' : 'upvote'}
-            className={`text-xl leading-none ${castVote === 1 ? 'text-[#e84393]' : canWrite && !votePending ? 'text-[#888] hover:text-[#e84393] cursor-pointer' : 'text-[#444] cursor-not-allowed'}`}
+            disabled={!canVote || votePending || castVote === 1}
+            title={voteBlockedReason || (castVote === 1 ? 'already upvoted' : 'upvote')}
+            className={`text-xl leading-none ${castVote === 1 ? 'text-[#e84393]' : canVote && !votePending ? 'text-[#888] hover:text-[#e84393] cursor-pointer' : 'text-[#444] cursor-not-allowed'}`}
           >
             +
           </button>
           <span className="text-[42px] font-light text-[#f2f5f4] leading-none px-2">{rating}</span>
           <button
             onClick={() => handleVote('downVote')}
-            disabled={!canWrite || votePending || castVote === -1}
-            title={castVote === -1 ? 'already downvoted' : 'downvote'}
-            className={`text-xl leading-none ${castVote === -1 ? 'text-[#f2f5f4]' : canWrite && !votePending ? 'text-[#888] hover:text-[#f2f5f4] cursor-pointer' : 'text-[#444] cursor-not-allowed'}`}
+            disabled={!canVote || votePending || castVote === -1}
+            title={voteBlockedReason || (castVote === -1 ? 'already downvoted' : 'downvote')}
+            className={`text-xl leading-none ${castVote === -1 ? 'text-[#f2f5f4]' : canVote && !votePending ? 'text-[#888] hover:text-[#f2f5f4] cursor-pointer' : 'text-[#444] cursor-not-allowed'}`}
           >
             -
           </button>
