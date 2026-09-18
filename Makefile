@@ -16,7 +16,7 @@ FORK_BLOCK      = 45615500
 ENS_REGISTRY    = 0x00000000000C2E074eC69A0dFb2997BA6C7d2e1e
 BZZ_TOKEN       = 0xdBF3Ea6F5beE45c02255B2c26a16F300502F68da
 POSTAGE_STAMP   = 0x45a1502382541Cd610CC9068e88727426b696293
-BATCH_ID       ?= $(shell curl -s $(BEE_API_URL)/stamps 2>/dev/null \
+BATCH_ID       ?= $(shell curl -s -H "x-api-key: $(BEE_MANAGER_KEY)" $(BEE_API_URL)/stamps 2>/dev/null \
                    | python3 -c "import sys,json; s=json.load(sys.stdin).get('stamps',[]); print(s[0]['batchID'] if s else '')" 2>/dev/null)
 
 .PHONY: help
@@ -110,9 +110,20 @@ typecheck: ## Type-check frontend
 # ============================================================
 
 .PHONY: deploy-contract
+# The recipe lines below are @-silenced on purpose: make echoes a command
+# before running it, and these carry $(MNEMONIC) on the command line. Without
+# the @ the seed phrase is printed to the terminal, into CI logs, and into the
+# scrollback of whoever ran it.
+#
+# FOUNDRY_FORK_BLOCK_NUMBER is set to the live head because foundry.toml pins
+# fork_block_number for tests, and a deploy inherits it -- a pruned node then
+# refuses with "No state available for block 45615500". A [profile.deploy]
+# does not help: profiles inherit from default, so leaving the key out keeps
+# the pin.
 deploy-contract: build ## Deploy contract (impl + proxy) to Gnosis Chain
 	@test -n "$(MNEMONIC)" || { echo "Error: set MNEMONIC in .env"; exit 1; }
-	BZZ_TOKEN=$(BZZ_TOKEN) POSTAGE_STAMP=$(POSTAGE_STAMP) \
+	@BZZ_TOKEN=$(BZZ_TOKEN) POSTAGE_STAMP=$(POSTAGE_STAMP) \
+	FOUNDRY_FORK_BLOCK_NUMBER=$$(cast block-number --rpc-url $(RPC_URL)) \
 	forge script script/Deploy.s.sol:DeployScript \
 		--rpc-url $(RPC_URL) \
 		--mnemonics "$(MNEMONIC)" \
@@ -123,7 +134,7 @@ deploy-contract: build ## Deploy contract (impl + proxy) to Gnosis Chain
 
 .PHONY: deploy-contract-local
 deploy-contract-local: build ## Deploy contract (impl + proxy) to local Anvil
-	BZZ_TOKEN=$(BZZ_TOKEN) POSTAGE_STAMP=$(POSTAGE_STAMP) \
+	@BZZ_TOKEN=$(BZZ_TOKEN) POSTAGE_STAMP=$(POSTAGE_STAMP) \
 	forge script script/Deploy.s.sol:DeployScript \
 		--rpc-url $(LOCAL_RPC_URL) \
 		--private-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 \
@@ -141,10 +152,16 @@ verify-contract: ## Verify existing contract on Blockscout (CONTRACT=0x...)
 # ============================================================
 
 .PHONY: deploy-frontend
+# BEE_API_URL is a bee-manager façade now, not a bare Bee node: uploads need
+# BEE_MANAGER_KEY as x-api-key, and the batch header is ignored -- the key
+# identifies the app and the façade stamps with that app's own batch. The
+# header is left in place because it costs nothing and a bare node still
+# needs it.
 deploy-frontend: build-frontend ## Build + upload frontend to Swarm
 	@echo "Uploading frontend/dist to Swarm..."
 	@REFERENCE=$$(curl -s -X POST \
 		"$(BEE_API_URL)/bzz?name=pinkchainsaw" \
+		-H "x-api-key: $(BEE_MANAGER_KEY)" \
 		-H "Swarm-Postage-Batch-Id: $(BATCH_ID)" \
 		-H "Swarm-Collection: true" \
 		-H "Swarm-Index-Document: index.html" \
