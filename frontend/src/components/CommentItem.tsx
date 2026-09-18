@@ -58,6 +58,10 @@ export default function CommentItem({ commentId, depth }: CommentItemProps) {
 
   // Refresh when anyone votes on or replies to this comment
   useWatchContractEvent({
+    // Poll with eth_getLogs instead of eth_newFilter: the public Gnosis RPC
+    // rejects filter creation with a 400, which surfaced as a console full of
+    // failed POSTs to rpc.gnosischain.com on every mount.
+    poll: true,
     address: PINKCHAINSAW_ADDRESS,
     abi: PINKCHAINSAW_ABI,
     eventName: 'CommentUpdated',

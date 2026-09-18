@@ -35,9 +35,11 @@ export default function UploadTile() {
     setUploading(true)
     try {
       toast('Uploading to Swarm...')
-      const tag = await writer.createTag()
+      // No tag. bee-js tags track sync progress, nothing here ever read the
+      // one this created, and /tags is not part of the bee-manager façade the
+      // app now uploads through -- it falls to the admin-only passthrough and
+      // answers 401, which killed the upload before a byte was sent.
       const { reference } = await writer.uploadFile(batchId, file, file.name, {
-        tag: tag.uid,
         contentType: file.type,
       })
       writeContract({
