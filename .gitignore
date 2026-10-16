@@ -21,3 +21,4 @@ frontend/.env
 
 # Local dev
 contract-address.txt
+*.swp
