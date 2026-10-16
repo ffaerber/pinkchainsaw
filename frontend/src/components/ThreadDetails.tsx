@@ -180,11 +180,10 @@ export default function ThreadDetails() {
         ) : (
           // Loaded while the probe is still out: the probe exists to tell
           // "expired" apart, and SwarmImage shows its own spinner meanwhile.
-          // Always at its real size, never scaled down: a long strip makes the
-          // page scroll, a very wide image scrolls sideways in its own box.
-          <div className="max-w-full overflow-x-auto">
-            <SwarmImage className="block max-w-none" placeholderClassName="w-[900px] max-w-full h-[40vh]" path={bzzhash ? `/bzz/${bzzhash}` : ''} />
-          </div>
+          // Width is capped to the page (900px), height is not: a wide image is
+          // scaled down to fit, a long strip keeps its full length and the page
+          // scrolls. Nothing is ever scaled up.
+          <SwarmImage className="block max-w-full h-auto" placeholderClassName="w-full h-[40vh]" path={bzzhash ? `/bzz/${bzzhash}` : ''} />
         )}
       </div>
 
