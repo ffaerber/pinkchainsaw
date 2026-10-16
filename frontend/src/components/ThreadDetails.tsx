@@ -9,6 +9,7 @@ import { usePostingBatch } from '../hooks/usePostingBatch'
 import { txErrorMessage } from '../lib/errors'
 import CommentItem from './CommentItem'
 import EnsName from './EnsName'
+import SwarmImage from './SwarmImage'
 
 export default function ThreadDetails() {
   const { threadId } = useParams<{ threadId: string }>()
@@ -159,7 +160,7 @@ export default function ThreadDetails() {
         ) : imageStatus === 'checking' ? (
           <div className="w-full h-[40vh] bg-[#212121] animate-pulse" />
         ) : (
-          <img className="max-w-full max-h-[80vh]" src={imgSrc} alt="" />
+          <SwarmImage className="max-w-full max-h-[80vh]" placeholderClassName="w-full h-[40vh]" src={imgSrc} />
         )}
       </div>
 

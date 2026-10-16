@@ -4,6 +4,7 @@ import { Link } from 'react-router'
 import { PINKCHAINSAW_ABI, PINKCHAINSAW_ADDRESS } from '../config/contracts'
 import { useBeeContext } from '../hooks/BeeContext'
 import { useBzzStatus } from '../hooks/useBzzStatus'
+import SwarmImage from './SwarmImage'
 
 interface ThreadTileProps {
   threadId: string
@@ -43,7 +44,12 @@ export default function ThreadTile({ threadId, onStatus }: ThreadTileProps) {
 
   return (
     <Link to={`/threads/${threadId}`} className="block w-[128px] h-[128px] bg-[#212121] overflow-hidden">
-      <img src={imgSrc} className="w-full h-full object-cover hover:opacity-80 transition-opacity" alt="" loading="lazy" />
+      <SwarmImage
+        src={imgSrc}
+        lazy
+        className="w-full h-full object-cover hover:opacity-80 transition-opacity"
+        placeholderClassName="w-full h-full"
+      />
     </Link>
   )
 }
