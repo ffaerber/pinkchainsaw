@@ -8,7 +8,9 @@ RPC_URL        ?= https://rpc.gnosischain.com
 LOCAL_RPC_URL  ?= http://localhost:8545
 # Mainnet, used only for the ENS content hash update. Deliberately not named ETH_RPC_URL:
 # that name is picked up by forge/cast and by anvil-init.sh as a default endpoint.
-MAINNET_RPC_URL ?= https://mainnet.ffaerber.duckdns.org
+# The homelab mainnet node is internal-only now, so default to a public endpoint;
+# it only has to broadcast one signed transaction.
+MAINNET_RPC_URL ?= https://ethereum-rpc.publicnode.com
 ENS_NAME       ?= pinkchainsaw.eth
 # Keep in sync with fork_block_number in foundry.toml. The tests rely on a postage batch
 # that exists at this block, so an unpinned run against latest can fail.
