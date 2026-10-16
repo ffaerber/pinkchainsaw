@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { RETRIES, retryDelayMs } from '../lib/retry'
+import { useBeeContext } from '../hooks/BeeContext'
 import Spinner from './Spinner'
 
 /**
@@ -10,7 +11,8 @@ import Spinner from './Spinner'
  * get one of them in time answers 404/5xx or simply hangs — a plain <img> then
  * shows a broken icon and never asks again. So the bytes are fetched here with
  * a timeout and retried with backoff, and the <img> only ever sees a finished
- * blob. Retries are worth it: the second attempt usually finds the chunks
+ * blob — which also lets the request carry a bee-manager's API key, something
+ * an <img src> cannot do. Retries are worth it: the second attempt usually finds the chunks
  * cached on the gateway node that fetched them the first time.
  */
 
@@ -19,7 +21,8 @@ const ATTEMPT_TIMEOUT_MS = 30_000
 type Phase = 'waiting' | 'loading' | 'loaded' | 'failed'
 
 interface SwarmImageProps {
-  src: string
+  /** Swarm path, e.g. `/bzz/<ref>`; read from the user's node or the gateway. */
+  path: string
   alt?: string
   /** Classes for the <img> once it has loaded. */
   className?: string
@@ -29,7 +32,8 @@ interface SwarmImageProps {
   lazy?: boolean
 }
 
-export default function SwarmImage({ src, alt = '', className, placeholderClassName, lazy }: SwarmImageProps) {
+export default function SwarmImage({ path, alt = '', className, placeholderClassName, lazy }: SwarmImageProps) {
+  const { read } = useBeeContext()
   const boxRef = useRef<HTMLDivElement>(null)
   const [visible, setVisible] = useState(!lazy)
   const [phase, setPhase] = useState<Phase>('waiting')
@@ -51,10 +55,10 @@ export default function SwarmImage({ src, alt = '', className, placeholderClassN
   useEffect(() => {
     setAttempt(0)
     setPhase('waiting')
-  }, [src])
+  }, [path])
 
   useEffect(() => {
-    if (!visible || !src) return
+    if (!visible || !path) return
     let cancelled = false
     let url: string | undefined
     const controller = new AbortController()
@@ -63,7 +67,7 @@ export default function SwarmImage({ src, alt = '', className, placeholderClassN
 
     setPhase('loading')
     // A retry must not be answered from the HTTP cache that just failed it.
-    fetch(src, { signal: controller.signal, cache: attempt > 0 || round > 0 ? 'reload' : 'default' })
+    read.fetch(path, { signal: controller.signal, cache: attempt > 0 || round > 0 ? 'reload' : 'default' })
       .then(res => {
         if (!res.ok) throw new Error(`HTTP ${res.status}`)
         return res.blob()
@@ -91,7 +95,7 @@ export default function SwarmImage({ src, alt = '', className, placeholderClassN
       controller.abort()
       if (url) URL.revokeObjectURL(url)
     }
-  }, [visible, src, attempt, round])
+  }, [visible, path, read, attempt, round])
 
   if (phase === 'loaded' && blobUrl) {
     return (

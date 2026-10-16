@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import type { SwarmReadState } from '@ffaerber/swarm-connect'
 
 /**
  * Swarm content only stays retrievable while the postage batch that stamped it
@@ -52,8 +53,8 @@ function remember(hash: string, status: 'alive' | 'dead') {
 }
 
 /** true = served, false = gone (404), null = no verdict (timeout, 5xx, network). */
-async function probe(url: string, signal: AbortSignal): Promise<boolean | null> {
-  const res = await fetch(url, { method: 'GET', headers: { Range: 'bytes=0-0' }, signal })
+async function probe(read: SwarmReadState, hash: string, signal: AbortSignal): Promise<boolean | null> {
+  const res = await read.fetch(`/bzz/${hash}`, { method: 'GET', headers: { Range: 'bytes=0-0' }, signal })
   // 206 for a served range, 200 for a gateway that ignores Range.
   if (res.status === 200 || res.status === 206) return true
   // 404 is what both read paths answer for an unpaid chunk — the one answer
@@ -62,7 +63,7 @@ async function probe(url: string, signal: AbortSignal): Promise<boolean | null> 
   return null
 }
 
-export function useBzzStatus(readUrl: string, hash: string | undefined): BzzStatus {
+export function useBzzStatus(read: SwarmReadState, hash: string | undefined): BzzStatus {
   const [status, setStatus] = useState<BzzStatus>(() =>
     hash ? cache.get(hash) ?? 'checking' : 'checking',
   )
@@ -80,7 +81,7 @@ export function useBzzStatus(readUrl: string, hash: string | undefined): BzzStat
     let timedOut = false
     const timer = setTimeout(() => { timedOut = true; controller.abort() }, PROBE_TIMEOUT_MS)
 
-    probe(`${readUrl}/bzz/${hash}`, controller.signal)
+    probe(read, hash, controller.signal)
       .then(ok => {
         if (ok === null) {
           // Not cached: the next render asks again, and meanwhile the image
@@ -104,7 +105,7 @@ export function useBzzStatus(readUrl: string, hash: string | undefined): BzzStat
       clearTimeout(timer)
       controller.abort()
     }
-  }, [readUrl, hash])
+  }, [read, hash])
 
   return status
 }

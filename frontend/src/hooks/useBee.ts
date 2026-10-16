@@ -8,8 +8,8 @@ import { BEE_GATEWAY_URL, PINKCHAINSAW_ADDRESS, PREFERRED_BATCH_ID } from '../co
  *
  * swarm-connect owns everything about reaching Swarm: which Bee node, whether it
  * is up, which postage stamp, and the wallet checks in front of them. This hook
- * turns that into what the components here hold — a reader, a writer, a URL for
- * <img src>, and a batch — and nothing else. It is the single instance of
+ * turns that into what the components here hold — where to read from, a
+ * writer, and a batch — and nothing else. It is the single instance of
  * useSwarmConnect in the app, so the connect modal and the upload paths look at
  * the same state rather than two copies of it.
  *
@@ -19,6 +19,9 @@ import { BEE_GATEWAY_URL, PINKCHAINSAW_ADDRESS, PREFERRED_BATCH_ID } from '../co
  */
 export function useBee() {
   const swarm = useSwarmConnect({
+    // Reads go through the user's node once it is running, this gateway
+    // otherwise (and as a fallback when the node fails); see swarm.read.
+    gatewayUrl: BEE_GATEWAY_URL,
     // Posting costs xDAI for gas and xBZZ for fees, uploading needs a stamp, and
     // the contract pulls the fees itself, so it also needs an allowance.
     // The node's own wallet is not used: this app never buys stamps.
@@ -31,7 +34,7 @@ export function useBee() {
     },
   })
 
-  const { beeApiUrl, beeApiKey, beeNode, stamps } = swarm
+  const { beeApiUrl, beeApiKey, beeNode, stamps, read } = swarm
   const isConnected = beeNode.isRunning
 
   // The key has to come with the client, not just with swarm-connect's own
@@ -43,7 +46,6 @@ export function useBee() {
     () => new Bee(beeApiUrl, beeApiKey ? { headers: { 'x-api-key': beeApiKey } } : undefined),
     [beeApiUrl, beeApiKey],
   )
-  const gatewayBee = useMemo(() => new Bee(BEE_GATEWAY_URL), [])
 
   // Default to this app's batch when the node has it and the user has not chosen
   // otherwise. It decides which batch a first post registers on chain — and that
@@ -60,12 +62,12 @@ export function useBee() {
   return {
     // The shared connect state, for the modal in App.tsx.
     swarm,
-    // Read through the local node when it is up, the public gateway otherwise.
-    reader: isConnected ? localBee : gatewayBee,
+    // Every download: the user's node when it is up (with its API key), the
+    // public gateway otherwise. read.fetch falls back to the gateway when the
+    // node fails, so use it rather than building URLs.
+    read,
     // Writes always need the local node: uploads are stamped there.
     writer: localBee,
-    // Base URL for <img src> tags.
-    readUrl: isConnected ? beeApiUrl : BEE_GATEWAY_URL,
     batchId: stamps.selectedStampId ?? null,
     allBatches: stamps.stamps,
     selectBatch: stamps.selectStamp,

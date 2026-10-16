@@ -14,7 +14,7 @@ interface ThreadTileProps {
 }
 
 export default function ThreadTile({ threadId, onStatus }: ThreadTileProps) {
-  const { readUrl } = useBeeContext()
+  const { read } = useBeeContext()
   const { data: thread } = useReadContract({
     address: PINKCHAINSAW_ADDRESS,
     abi: PINKCHAINSAW_ABI,
@@ -24,7 +24,7 @@ export default function ThreadTile({ threadId, onStatus }: ThreadTileProps) {
 
   const post = thread as any
   const bzzhash = post ? (post.bzzhash as string).replace('0x', '') : undefined
-  const status = useBzzStatus(readUrl, bzzhash)
+  const status = useBzzStatus(read, bzzhash)
 
   useEffect(() => {
     if (status === 'checking') return
@@ -40,12 +40,10 @@ export default function ThreadTile({ threadId, onStatus }: ThreadTileProps) {
   if (status === 'dead') return null
   if (status === 'checking') return <div className="w-[128px] h-[128px] bg-[#212121] animate-pulse" />
 
-  const imgSrc = `${readUrl}/bzz/${bzzhash}`
-
   return (
     <Link to={`/threads/${threadId}`} className="block w-[128px] h-[128px] bg-[#212121] overflow-hidden">
       <SwarmImage
-        src={imgSrc}
+        path={`/bzz/${bzzhash}`}
         lazy
         className="w-full h-full object-cover hover:opacity-80 transition-opacity"
         placeholderClassName="w-full h-full"

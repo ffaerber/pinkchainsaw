@@ -14,7 +14,7 @@ import SwarmImage from './SwarmImage'
 export default function ThreadDetails() {
   const { threadId } = useParams<{ threadId: string }>()
   const { address } = useAccount()
-  const { writer, readUrl } = useBeeContext()
+  const { writer, read } = useBeeContext()
   const { postingBatchId: batchId, refetchRegisteredBatch } = usePostingBatch()
 
   const { data: bzzAllowance } = useReadContract({
@@ -56,8 +56,7 @@ export default function ThreadDetails() {
   const voteBlockedReason = !onChain
     ? 'waiting for this post to be confirmed on chain'
     : isOwnPost ? 'you cannot vote on your own post' : ''
-  const imgSrc = bzzhash ? `${readUrl}/bzz/${bzzhash}` : ''
-  const imageStatus = useBzzStatus(readUrl, bzzhash || undefined)
+  const imageStatus = useBzzStatus(read, bzzhash || undefined)
 
   // The vote this account has already cast: 1, -1, or 0
   const { data: myVote, refetch: refetchVote } = useReadContract({
@@ -160,7 +159,7 @@ export default function ThreadDetails() {
         ) : (
           // Loaded while the probe is still out: the probe exists to tell
           // "expired" apart, and SwarmImage shows its own spinner meanwhile.
-          <SwarmImage className="max-w-full max-h-[80vh]" placeholderClassName="w-full h-[40vh]" src={imgSrc} />
+          <SwarmImage className="max-w-full max-h-[80vh]" placeholderClassName="w-full h-[40vh]" path={bzzhash ? `/bzz/${bzzhash}` : ''} />
         )}
       </div>
 

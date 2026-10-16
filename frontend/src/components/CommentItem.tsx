@@ -20,7 +20,7 @@ interface CommentItemProps {
 
 export default function CommentItem({ commentId, depth }: CommentItemProps) {
   const { address } = useAccount()
-  const { reader, writer } = useBeeContext()
+  const { read, writer } = useBeeContext()
   const { postingBatchId: batchId, refetchRegisteredBatch } = usePostingBatch()
 
   const { data: bzzAllowance } = useReadContract({
@@ -60,11 +60,16 @@ export default function CommentItem({ commentId, depth }: CommentItemProps) {
     let cancelled = false
     setTextFailed(false)
     setTextRetry(0)
-    withRetry(() => reader.downloadData(hash), () => cancelled, setTextRetry)
-      .then(data => { if (!cancelled) setCommentText(data.toUtf8()) })
+    const download = async () => {
+      const res = await read.fetch(`/bytes/${hash}`)
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      return res.text()
+    }
+    withRetry(download, () => cancelled, setTextRetry)
+      .then(text => { if (!cancelled) setCommentText(text) })
       .catch(() => { if (!cancelled) setTextFailed(true) })
     return () => { cancelled = true }
-  }, [reader, post?.bzzhash, textRound])
+  }, [read, post?.bzzhash, textRound])
 
   // The vote this account has already cast: 1, -1, or 0
   const { data: myVote, refetch: refetchVote } = useReadContract({
