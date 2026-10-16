@@ -9,7 +9,6 @@ import { ThreadsProvider } from './hooks/ThreadsContext'
 import ChainGuard from './components/ChainGuard'
 import Nav from './components/Nav'
 import ThreadList from './components/ThreadList'
-import ThreadDetails from './components/ThreadDetails'
 import ConnectModal from './components/ConnectModal'
 import { useState } from 'react'
 
@@ -28,7 +27,8 @@ function AppContent() {
         {modalOpen && <ConnectModal onClose={() => setModalOpen(false)} />}
         <Routes>
           <Route path="/" element={<ThreadList />} />
-          <Route path="/threads/:threadId" element={<ThreadDetails />} />
+          {/* Same grid; the post opens inline below its row. */}
+          <Route path="/threads/:threadId" element={<ThreadList />} />
         </Routes>
         <Toaster
           position="bottom-right"

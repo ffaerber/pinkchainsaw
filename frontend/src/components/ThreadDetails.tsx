@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useParams, Link, useNavigate } from 'react-router'
+import { Link, useNavigate } from 'react-router'
 import { useAccount, useReadContract, useWatchContractEvent, useWriteContract, useWaitForTransactionReceipt } from 'wagmi'
 import toast from 'react-hot-toast'
 import { PINKCHAINSAW_ABI, PINKCHAINSAW_ADDRESS, BZZ_TOKEN_ADDRESS, ERC20_ABI } from '../config/contracts'
@@ -12,8 +12,11 @@ import CommentItem from './CommentItem'
 import EnsName from './EnsName'
 import SwarmImage from './SwarmImage'
 
-export default function ThreadDetails() {
-  const { threadId } = useParams<{ threadId: string }>()
+/**
+ * A post opened inline in the grid, below the row of its thumbnail (the way
+ * pr0 does it). The grid decides where it sits; this is its content.
+ */
+export default function ThreadDetails({ threadId, onClose }: { threadId: string; onClose: () => void }) {
   const { address } = useAccount()
   const { writer, read } = useBeeContext()
   const { postingBatchId: batchId, refetchRegisteredBatch } = usePostingBatch()
@@ -59,8 +62,8 @@ export default function ThreadDetails() {
     : isOwnPost ? 'you cannot vote on your own post' : ''
   const imageStatus = useBzzStatus(read, bzzhash || undefined)
 
-  // Page through threads in the grid's order: ← newer, → older. Arrow keys
-  // too, except while typing a comment.
+  // Page through threads in the grid's order: ← / A newer, → / D older, Esc
+  // closes. Not while typing a comment.
   const navigate = useNavigate()
   const { newer, older } = useThreadNeighbours(threadId)
   useEffect(() => {
@@ -68,14 +71,16 @@ export default function ThreadDetails() {
       if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return
       const t = e.target as HTMLElement | null
       if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return
-      const to = e.key === 'ArrowLeft' ? newer : e.key === 'ArrowRight' ? older : undefined
+      if (e.key === 'Escape') { e.preventDefault(); onClose(); return }
+      const k = e.key.toLowerCase()
+      const to = k === 'arrowleft' || k === 'a' ? newer : k === 'arrowright' || k === 'd' ? older : undefined
       if (!to) return
       e.preventDefault()
       navigate(`/threads/${to}`)
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [newer, older, navigate])
+  }, [newer, older, navigate, onClose])
 
   // The vote this account has already cast: 1, -1, or 0
   const { data: myVote, refetch: refetchVote } = useReadContract({
@@ -153,7 +158,7 @@ export default function ThreadDetails() {
     }
   }
 
-  if (!post) return <div className="text-center text-[#888] mt-20">Loading...</div>
+  if (!post) return <div className="w-full h-[40vh] bg-black animate-pulse" />
 
   const commentIds = post.commentIds as string[] || []
   const timestamp = Number(post.timestamp) * 1000
@@ -161,13 +166,22 @@ export default function ThreadDetails() {
   const owner = post.owner as string
 
   return (
-    <div className="max-w-[900px] mx-auto">
+    <div className="w-full bg-[#161616] border-y border-[#252525]">
       {/* Image. Unlike the grid, the thread is not hidden when its image has
           expired: the votes, the comments and the score are all still here and
           still worth reading. Only the picture is gone, so say that. */}
       <div className="relative bg-black flex justify-center">
-        <PageArrow to={newer} side="left" label="newer post (←)" />
-        <PageArrow to={older} side="right" label="older post (→)" />
+        <PageArrow to={newer} side="left" label="newer post (← / A)" />
+        <PageArrow to={older} side="right" label="older post (→ / D)" />
+        <button
+          type="button"
+          onClick={onClose}
+          title="close (Esc)"
+          aria-label="close (Esc)"
+          className="absolute top-2 right-2 z-20 w-8 h-8 rounded-full bg-black/50 text-white/70 hover:text-white text-lg leading-none"
+        >
+          ✕
+        </button>
         {imageStatus === 'dead' ? (
           <div className="w-full py-16 px-4 text-center text-[#666]">
             <p className="text-sm">This image is no longer on Swarm.</p>
@@ -180,7 +194,7 @@ export default function ThreadDetails() {
         ) : (
           // Loaded while the probe is still out: the probe exists to tell
           // "expired" apart, and SwarmImage shows its own spinner meanwhile.
-          // Width is capped to the page (900px), height is not: a wide image is
+          // Width is capped to the grid row, height is not: a wide image is
           // scaled down to fit, a long strip keeps its full length and the page
           // scrolls. Nothing is ever scaled up.
           <SwarmImage className="block max-w-full h-auto" placeholderClassName="w-full h-[40vh]" path={bzzhash ? `/bzz/${bzzhash}` : ''} />
@@ -247,10 +261,6 @@ export default function ThreadDetails() {
         ))}
       </div>
 
-      {/* Back link */}
-      <div className="px-4 py-6">
-        <Link to="/" className="text-sm text-[#888] hover:text-[#e84393]">back</Link>
-      </div>
     </div>
   )
 }

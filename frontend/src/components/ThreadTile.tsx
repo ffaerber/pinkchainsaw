@@ -11,9 +11,11 @@ interface ThreadTileProps {
   /** Called once the tile knows whether its image is still on Swarm, so the
       grid can say how many posts it is hiding instead of silently shrinking. */
   onStatus?: (threadId: string, alive: boolean) => void
+  /** This post is open below its row; clicking the tile again closes it. */
+  selected?: boolean
 }
 
-export default function ThreadTile({ threadId, onStatus }: ThreadTileProps) {
+export default function ThreadTile({ threadId, onStatus, selected = false }: ThreadTileProps) {
   const { read } = useBeeContext()
   const { data: thread } = useReadContract({
     address: PINKCHAINSAW_ADDRESS,
@@ -41,7 +43,10 @@ export default function ThreadTile({ threadId, onStatus }: ThreadTileProps) {
   if (status === 'checking') return <div className="w-[128px] h-[128px] bg-[#212121] animate-pulse" />
 
   return (
-    <Link to={`/threads/${threadId}`} className="block w-[128px] h-[128px] bg-[#212121] overflow-hidden">
+    <Link
+      to={selected ? '/' : `/threads/${threadId}`}
+      className={`block w-[128px] h-[128px] bg-[#212121] overflow-hidden ${selected ? 'outline outline-2 -outline-offset-2 outline-[#e84393]' : ''}`}
+    >
       <SwarmImage
         path={`/bzz/${bzzhash}`}
         lazy
