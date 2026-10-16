@@ -15,8 +15,15 @@
  * is exactly the trade we want: the effect is kept, the tag is not.
  */
 
-/** Longest edge of the uploaded image. Enough for a full-screen view. */
-export const MAX_EDGE = 1600
+/**
+ * Pixel budget of the uploaded image: 1600 × 1600. Capped by area, not by the
+ * longest edge — an edge cap squeezes long strips (comics, tall memes) to a
+ * sliver: 308 × 6400 became 77 × 1600, unreadable. By area, a 2 MP strip
+ * keeps every pixel while a 12 MP phone photo still comes down to ~1850 × 1390.
+ */
+export const MAX_PIXELS = 1600 * 1600
+/** WebP cannot encode an edge longer than this. */
+const WEBP_MAX_EDGE = 16383
 /** WebP quality. 0.82 is where artefacts stop being visible on photos. */
 export const WEBP_QUALITY = 0.82
 
@@ -43,7 +50,7 @@ const PASSTHROUGH = new Set(['image/gif'])
 
 export async function prepareImage(
   file: File,
-  { maxEdge = MAX_EDGE, quality = WEBP_QUALITY }: { maxEdge?: number; quality?: number } = {},
+  { maxPixels = MAX_PIXELS, quality = WEBP_QUALITY }: { maxPixels?: number; quality?: number } = {},
 ): Promise<PreparedImage> {
   if (PASSTHROUGH.has(file.type)) {
     const bitmap = await createImageBitmap(file).catch(() => null)
@@ -61,7 +68,11 @@ export async function prepareImage(
   }
 
   const bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' })
-  const scale = Math.min(1, maxEdge / Math.max(bitmap.width, bitmap.height))
+  const scale = Math.min(
+    1,
+    Math.sqrt(maxPixels / (bitmap.width * bitmap.height)),
+    WEBP_MAX_EDGE / Math.max(bitmap.width, bitmap.height),
+  )
   const width = Math.max(1, Math.round(bitmap.width * scale))
   const height = Math.max(1, Math.round(bitmap.height * scale))
 
