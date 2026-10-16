@@ -180,7 +180,11 @@ export default function ThreadDetails() {
         ) : (
           // Loaded while the probe is still out: the probe exists to tell
           // "expired" apart, and SwarmImage shows its own spinner meanwhile.
-          <SwarmImage className="max-w-full max-h-[80vh]" placeholderClassName="w-full h-[40vh]" path={bzzhash ? `/bzz/${bzzhash}` : ''} />
+          // Always at its real size, never scaled down: a long strip makes the
+          // page scroll, a very wide image scrolls sideways in its own box.
+          <div className="max-w-full overflow-x-auto">
+            <SwarmImage className="block max-w-none" placeholderClassName="w-[900px] max-w-full h-[40vh]" path={bzzhash ? `/bzz/${bzzhash}` : ''} />
+          </div>
         )}
       </div>
 
@@ -260,11 +264,15 @@ function PageArrow({ to, side, label }: { to?: string; side: 'left' | 'right'; l
       to={`/threads/${to}`}
       title={label}
       aria-label={label}
-      className={`absolute top-0 bottom-0 ${side === 'left' ? 'left-0' : 'right-0'} z-10 w-16 flex items-center justify-center text-white/40 hover:text-white hover:bg-white/5 transition-colors`}
+      className={`absolute top-0 bottom-0 ${side === 'left' ? 'left-0' : 'right-0'} z-10 w-16 flex justify-center text-white/40 hover:text-white hover:bg-white/5 transition-colors`}
     >
-      <svg viewBox="0 0 24 24" className="w-9 h-9 drop-shadow" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-        <path d={side === 'left' ? 'M15 5l-7 7 7 7' : 'M9 5l7 7-7 7'} />
-      </svg>
+      {/* At most one screen tall and sticky: centred on a short image, and on a
+          long one it stays at mid-screen while the page scrolls. */}
+      <span className="sticky top-0 flex items-center" style={{ height: 'min(100vh, 100%)' }}>
+        <svg viewBox="0 0 24 24" className="w-9 h-9 drop-shadow" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+          <path d={side === 'left' ? 'M15 5l-7 7 7 7' : 'M9 5l7 7-7 7'} />
+        </svg>
+      </span>
     </Link>
   )
 }
