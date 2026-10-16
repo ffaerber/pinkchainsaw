@@ -5,6 +5,7 @@ import { Toaster } from 'react-hot-toast'
 import { useAccount } from 'wagmi'
 import { config } from './config/wagmi'
 import { BeeProvider } from './hooks/BeeContext'
+import { ThreadsProvider } from './hooks/ThreadsContext'
 import ChainGuard from './components/ChainGuard'
 import Nav from './components/Nav'
 import ThreadList from './components/ThreadList'
@@ -20,6 +21,7 @@ function AppContent() {
 
   return (
     <BeeProvider>
+      <ThreadsProvider>
       <HashRouter>
         {isConnected && <ChainGuard />}
         <Nav onConnectClick={() => setModalOpen(true)} />
@@ -35,6 +37,7 @@ function AppContent() {
           }}
         />
       </HashRouter>
+      </ThreadsProvider>
     </BeeProvider>
   )
 }

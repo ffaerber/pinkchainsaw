@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react'
-import { useParams, Link } from 'react-router'
+import { useParams, Link, useNavigate } from 'react-router'
 import { useAccount, useReadContract, useWatchContractEvent, useWriteContract, useWaitForTransactionReceipt } from 'wagmi'
 import toast from 'react-hot-toast'
 import { PINKCHAINSAW_ABI, PINKCHAINSAW_ADDRESS, BZZ_TOKEN_ADDRESS, ERC20_ABI } from '../config/contracts'
 import { useBeeContext } from '../hooks/BeeContext'
 import { useBzzStatus } from '../hooks/useBzzStatus'
+import { useThreadNeighbours } from '../hooks/ThreadsContext'
 import { usePostingBatch } from '../hooks/usePostingBatch'
 import { txErrorMessage } from '../lib/errors'
 import CommentItem from './CommentItem'
@@ -57,6 +58,24 @@ export default function ThreadDetails() {
     ? 'waiting for this post to be confirmed on chain'
     : isOwnPost ? 'you cannot vote on your own post' : ''
   const imageStatus = useBzzStatus(read, bzzhash || undefined)
+
+  // Page through threads in the grid's order: ← newer, → older. Arrow keys
+  // too, except while typing a comment.
+  const navigate = useNavigate()
+  const { newer, older } = useThreadNeighbours(threadId)
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return
+      const t = e.target as HTMLElement | null
+      if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return
+      const to = e.key === 'ArrowLeft' ? newer : e.key === 'ArrowRight' ? older : undefined
+      if (!to) return
+      e.preventDefault()
+      navigate(`/threads/${to}`)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [newer, older, navigate])
 
   // The vote this account has already cast: 1, -1, or 0
   const { data: myVote, refetch: refetchVote } = useReadContract({
@@ -146,7 +165,9 @@ export default function ThreadDetails() {
       {/* Image. Unlike the grid, the thread is not hidden when its image has
           expired: the votes, the comments and the score are all still here and
           still worth reading. Only the picture is gone, so say that. */}
-      <div className="bg-black flex justify-center">
+      <div className="relative bg-black flex justify-center">
+        <PageArrow to={newer} side="left" label="newer post (←)" />
+        <PageArrow to={older} side="right" label="older post (→)" />
         {imageStatus === 'dead' ? (
           <div className="w-full py-16 px-4 text-center text-[#666]">
             <p className="text-sm">This image is no longer on Swarm.</p>
@@ -228,5 +249,22 @@ export default function ThreadDetails() {
         <Link to="/" className="text-sm text-[#888] hover:text-[#e84393]">back</Link>
       </div>
     </div>
+  )
+}
+
+/** Overlay arrow on one side of the image; hidden at either end of the list. */
+function PageArrow({ to, side, label }: { to?: string; side: 'left' | 'right'; label: string }) {
+  if (!to) return null
+  return (
+    <Link
+      to={`/threads/${to}`}
+      title={label}
+      aria-label={label}
+      className={`absolute top-0 bottom-0 ${side === 'left' ? 'left-0' : 'right-0'} z-10 w-16 flex items-center justify-center text-white/40 hover:text-white hover:bg-white/5 transition-colors`}
+    >
+      <svg viewBox="0 0 24 24" className="w-9 h-9 drop-shadow" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+        <path d={side === 'left' ? 'M15 5l-7 7 7 7' : 'M9 5l7 7-7 7'} />
+      </svg>
+    </Link>
   )
 }
