@@ -1,6 +1,6 @@
 /**
- * Prepare a picked image for upload: shrink it, re-encode it as WebP, and drop
- * everything that is not pixels.
+ * Prepare a picked image for upload: re-encode it as WebP at its original size,
+ * and drop everything that is not pixels.
  *
  * Stripping metadata is not a separate step here, it is a consequence of the
  * encode. A canvas holds pixels and nothing else, so EXIF — camera, lens,
@@ -16,13 +16,12 @@
  */
 
 /**
- * Pixel budget of the uploaded image: 1600 × 1600. Capped by area, not by the
- * longest edge — an edge cap squeezes long strips (comics, tall memes) to a
- * sliver: 308 × 6400 became 77 × 1600, unreadable. By area, a 2 MP strip
- * keeps every pixel while a 12 MP phone photo still comes down to ~1850 × 1390.
+ * Images keep their original size. These are not quality choices but the
+ * limits of the pipeline, and only images beyond them are scaled down:
+ * Safari refuses a canvas larger than 16,777,216 px (e.g. a 48 MP phone photo),
+ * and WebP cannot encode an edge longer than 16383 px.
  */
-export const MAX_PIXELS = 1600 * 1600
-/** WebP cannot encode an edge longer than this. */
+export const MAX_PIXELS = 16_777_216
 const WEBP_MAX_EDGE = 16383
 /** WebP quality. 0.82 is where artefacts stop being visible on photos. */
 export const WEBP_QUALITY = 0.82
