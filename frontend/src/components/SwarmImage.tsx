@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
+import { RETRIES, retryDelayMs } from '../lib/retry'
+import Spinner from './Spinner'
 
 /**
  * An <img> for Swarm content that survives a slow gateway.
@@ -13,7 +15,6 @@ import { useEffect, useRef, useState } from 'react'
  */
 
 const ATTEMPT_TIMEOUT_MS = 30_000
-const RETRIES = 4 // after the first attempt: waits 1s, 2s, 4s, 8s
 
 type Phase = 'waiting' | 'loading' | 'loaded' | 'failed'
 
@@ -76,7 +77,7 @@ export default function SwarmImage({ src, alt = '', className, placeholderClassN
       .catch(() => {
         if (cancelled) return
         if (attempt < RETRIES) {
-          retryTimer = setTimeout(() => setAttempt(a => a + 1), 1000 * 2 ** attempt)
+          retryTimer = setTimeout(() => setAttempt(a => a + 1), retryDelayMs(attempt))
         } else {
           setPhase('failed')
         }
@@ -132,10 +133,7 @@ export default function SwarmImage({ src, alt = '', className, placeholderClassN
         </button>
       ) : (
         <>
-          <svg viewBox="0 0 24 24" className="w-6 h-6 animate-spin text-[#e84393]" fill="none" aria-label="loading">
-            <circle cx="12" cy="12" r="9" stroke="currentColor" strokeOpacity="0.2" strokeWidth="3" />
-            <path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
-          </svg>
+          <Spinner className="w-6 h-6" />
           {attempt > 0 && <span className="text-[10px]">retry {attempt}/{RETRIES}</span>}
         </>
       )}

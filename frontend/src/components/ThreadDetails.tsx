@@ -157,9 +157,9 @@ export default function ThreadDetails() {
             </p>
             <p className="text-[10px] mt-3 font-mono break-all text-[#444]">{bzzhash}</p>
           </div>
-        ) : imageStatus === 'checking' ? (
-          <div className="w-full h-[40vh] bg-[#212121] animate-pulse" />
         ) : (
+          // Loaded while the probe is still out: the probe exists to tell
+          // "expired" apart, and SwarmImage shows its own spinner meanwhile.
           <SwarmImage className="max-w-full max-h-[80vh]" placeholderClassName="w-full h-[40vh]" src={imgSrc} />
         )}
       </div>

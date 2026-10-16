@@ -16,7 +16,9 @@ import { useEffect, useState } from 'react'
  *
  * Answers are cached per reference for the session. Content that has expired
  * does not come back (the chunks are gone once nobody pays for them), and a
- * live reference re-checks on the next page load, which is often enough.
+ * live reference re-checks on the next page load, which is often enough. Only
+ * a 404 counts as expired; a timeout or 5xx is no verdict, is not cached, and
+ * reports 'alive' so the image loader (which retries) gets to try.
  */
 export type BzzStatus = 'checking' | 'alive' | 'dead'
 
@@ -25,7 +27,8 @@ export type BzzStatus = 'checking' | 'alive' | 'dead'
 // shorter than that aborts before the 404 arrives, so the answer never gets
 // cached and every render pays the wait again.
 const PROBE_TIMEOUT_MS = 20_000
-const CACHE_KEY = 'bzz-status-v1'
+// v2: v1 cached timeouts as dead, so drop those entries.
+const CACHE_KEY = 'bzz-status-v2'
 
 const cache: Map<string, 'alive' | 'dead'> = loadCache()
 
@@ -48,11 +51,15 @@ function remember(hash: string, status: 'alive' | 'dead') {
   }
 }
 
-async function probe(url: string, signal: AbortSignal): Promise<boolean> {
+/** true = served, false = gone (404), null = no verdict (timeout, 5xx, network). */
+async function probe(url: string, signal: AbortSignal): Promise<boolean | null> {
   const res = await fetch(url, { method: 'GET', headers: { Range: 'bytes=0-0' }, signal })
-  // 206 for a served range, 200 for a gateway that ignores Range. Anything else
-  // — 404 for an unpaid chunk, 5xx from a gateway that gave up — is dead.
-  return res.status === 200 || res.status === 206
+  // 206 for a served range, 200 for a gateway that ignores Range.
+  if (res.status === 200 || res.status === 206) return true
+  // 404 is what both read paths answer for an unpaid chunk — the one answer
+  // that means "expired". A 5xx is a gateway having a bad moment, not a verdict.
+  if (res.status === 404) return false
+  return null
 }
 
 export function useBzzStatus(readUrl: string, hash: string | undefined): BzzStatus {
@@ -70,20 +77,26 @@ export function useBzzStatus(readUrl: string, hash: string | undefined): BzzStat
 
     setStatus('checking')
     const controller = new AbortController()
-    const timer = setTimeout(() => controller.abort(), PROBE_TIMEOUT_MS)
+    let timedOut = false
+    const timer = setTimeout(() => { timedOut = true; controller.abort() }, PROBE_TIMEOUT_MS)
 
     probe(`${readUrl}/bzz/${hash}`, controller.signal)
       .then(ok => {
+        if (ok === null) {
+          // Not cached: the next render asks again, and meanwhile the image
+          // loader gets its chance, with retries, instead of a hidden tile.
+          setStatus('alive')
+          return
+        }
         remember(hash, ok ? 'alive' : 'dead')
         setStatus(ok ? 'alive' : 'dead')
       })
       .catch(() => {
-        // A timeout past 20s, or a network failure. Cached as dead for the
-        // session either way: to someone looking at the page, content that
-        // never arrives and content that 404s are the same thing, and the cache
-        // is dropped on the next page load so a slow day is not permanent.
-        remember(hash, 'dead')
-        setStatus('dead')
+        // A timeout past 20s, or a network failure. That used to be cached as
+        // dead, which hid tiles (and told the detail page the image had
+        // expired) whenever the gateway was merely slow. It is no verdict:
+        // let SwarmImage try, with retries, and do not remember it.
+        if (!controller.signal.aborted || timedOut) setStatus('alive')
       })
       .finally(() => clearTimeout(timer))
 

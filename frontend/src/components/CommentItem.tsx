@@ -5,7 +5,9 @@ import { PINKCHAINSAW_ABI, PINKCHAINSAW_ADDRESS, BZZ_TOKEN_ADDRESS, ERC20_ABI } 
 import { useBeeContext } from '../hooks/BeeContext'
 import { usePostingBatch } from '../hooks/usePostingBatch'
 import { txErrorMessage } from '../lib/errors'
+import { RETRIES, withRetry } from '../lib/retry'
 import EnsName from './EnsName'
+import Spinner from './Spinner'
 
 // Reply chains are unbounded on chain, so stop recursing before a deep chain can
 // exhaust the render stack. Deeper replies stay reachable from the last rendered comment.
@@ -46,15 +48,23 @@ export default function CommentItem({ commentId, depth }: CommentItemProps) {
     ? 'waiting for this comment to be confirmed on chain'
     : isOwnPost ? 'you cannot vote on your own comment' : ''
 
-  // Download comment text from Swarm
-  const [commentText, setCommentText] = useState('')
+  // Download comment text from Swarm, retrying like images do (see SwarmImage):
+  // one slow chunk used to leave "[failed to load]" for good.
+  const [commentText, setCommentText] = useState<string | null>(null)
+  const [textFailed, setTextFailed] = useState(false)
+  const [textRetry, setTextRetry] = useState(0)
+  const [textRound, setTextRound] = useState(0)
   useEffect(() => {
     if (!post?.bzzhash) return
     const hash = (post.bzzhash as string).replace('0x', '')
-    reader.downloadData(hash)
-      .then(data => setCommentText(data.toUtf8()))
-      .catch(() => setCommentText('[failed to load]'))
-  }, [reader, post?.bzzhash])
+    let cancelled = false
+    setTextFailed(false)
+    setTextRetry(0)
+    withRetry(() => reader.downloadData(hash), () => cancelled, setTextRetry)
+      .then(data => { if (!cancelled) setCommentText(data.toUtf8()) })
+      .catch(() => { if (!cancelled) setTextFailed(true) })
+    return () => { cancelled = true }
+  }, [reader, post?.bzzhash, textRound])
 
   // The vote this account has already cast: 1, -1, or 0
   const { data: myVote, refetch: refetchVote } = useReadContract({
@@ -146,7 +156,22 @@ export default function CommentItem({ commentId, depth }: CommentItemProps) {
     <div className={depth > 0 ? 'ml-4 border-l border-dashed border-[#252525] pl-4' : ''}>
       <div className="mb-4">
         {/* Comment body */}
-        <p className="text-sm text-[#f2f5f4] whitespace-pre-wrap max-w-[532px] break-words">{commentText}</p>
+        {commentText !== null ? (
+          <p className="text-sm text-[#f2f5f4] whitespace-pre-wrap max-w-[532px] break-words">{commentText}</p>
+        ) : textFailed ? (
+          <button
+            type="button"
+            onClick={() => setTextRound(r => r + 1)}
+            className="text-xs text-[#666] hover:text-[#e84393] transition-colors"
+          >
+            failed to load · tap to retry
+          </button>
+        ) : (
+          <p className="flex items-center gap-2 text-xs text-[#666]">
+            <Spinner className="w-3.5 h-3.5" />
+            {textRetry > 0 && `retry ${textRetry}/${RETRIES}`}
+          </p>
+        )}
 
         {/* Comment footer */}
         <div className="flex items-center gap-3 mt-1 pb-2 border-b border-[#252525] text-xs text-[#888]">
