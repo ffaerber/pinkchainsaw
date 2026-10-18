@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router'
 import { useThreads } from '../hooks/ThreadsContext'
+import About from './About'
 import ThreadDetails from './ThreadDetails'
 import ThreadTile from './ThreadTile'
 import UploadTile from './UploadTile'
@@ -73,6 +74,7 @@ export default function ThreadList() {
 
   return (
     <div ref={gridRef} className="flex flex-wrap gap-1 p-1 justify-center">
+      <About />
       {!found && panel}
       <UploadTile />
       {visible.map((threadId, i) => [
